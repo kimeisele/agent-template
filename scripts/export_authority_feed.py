@@ -7,8 +7,8 @@ from hashlib import sha256
 from pathlib import Path
 
 
-def _git_output(args: list[str]) -> str:
-    return subprocess.check_output(["git", *args], text=True).strip()
+def _git_output(repo_root: Path, args: list[str]) -> str:
+    return subprocess.check_output(["git", "-C", str(repo_root), *args], text=True).strip()
 
 
 def _canonical_sha(payload: dict) -> str:
@@ -21,15 +21,18 @@ def main() -> int:
     parser.add_argument("--repo-id")
     args = parser.parse_args()
 
-    repo_id = args.repo_id or _git_output(["rev-parse", "--show-toplevel"]).rstrip("/").split("/")[-1]
-    source_sha = _git_output(["rev-parse", "HEAD"])
+    repo_root = Path(__file__).resolve().parents[1]
+    output_root = Path(args.output_dir)
+    if not output_root.is_absolute():
+        output_root = repo_root / output_root
+    repo_id = args.repo_id or repo_root.name
+    source_sha = _git_output(repo_root, ["rev-parse", "HEAD"])
     generated_at = 0.0
     repo_label = " ".join(word.capitalize() for word in repo_id.replace("_", "-").split("-") if word) or repo_id
-    charter_path = Path("docs/authority/charter.md")
+    charter_path = repo_root / "docs/authority/charter.md"
     charter_body = charter_path.read_text().strip()
-    version_root = Path(args.output_dir) / "bundles" / source_sha
-    exports_root = version_root / ".authority-exports"
-    exports_root.mkdir(parents=True, exist_ok=True)
+    version_root = output_root / "bundles" / source_sha
+    version_root.mkdir(parents=True, exist_ok=True)
 
     payloads = {
         "canonical_surface": {
@@ -98,7 +101,7 @@ def main() -> int:
         "bundle": {"kind": "source_authority_bundle", "path": str(Path("bundles") / source_sha / "source-authority-bundle.json"), "sha256": sha256(bundle_path.read_bytes()).hexdigest()},
         "artifacts": artifacts,
     }
-    manifest_path = Path(args.output_dir) / "latest-authority-manifest.json"
+    manifest_path = output_root / "latest-authority-manifest.json"
     manifest_path.parent.mkdir(parents=True, exist_ok=True)
     manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n")
     return 0
