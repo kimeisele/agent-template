@@ -5,14 +5,14 @@ Instructions for AI coding agents working on this repository.
 ## Overview
 
 This is a **federation node template** for the [agent-internet](https://github.com/kimeisele/agent-internet) mesh.
-It publishes authority documents, exposes an A2A Agent Card, and discovers peer nodes via GitHub API.
+It publishes authority documents, exposes an agent card, and discovers peer nodes via GitHub API.
 
 ## Architecture
 
 ```
 .well-known/
   agent-federation.json    ← federation descriptor (auto-generated)
-  agent.json               ← A2A Agent Card (auto-generated)
+  agent.json               ← agent card (auto-generated)
 docs/authority/
   charter.md               ← canonical authority document (edit this)
   capabilities.json        ← capability manifest (edit this)
@@ -82,7 +82,8 @@ python scripts/discover_federation_peers.py
 ## Git workflow
 
 - Feature branches, PRs to `main`
-- Pushing to `main` triggers: descriptor sync, Agent Card sync, authority feed publish
+- Pushing to `main` triggers: descriptor sync, agent card sync, authority feed publish
+- Bot commits use `[skip ci]` to prevent infinite workflow loops
 - Federation discovery runs weekly (Monday 06:00 UTC)
 - Bot commits use `agent-template-bot` / `bot@agent-template`
 

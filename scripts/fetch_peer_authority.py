@@ -1,49 +1,28 @@
 """Fetch and validate a peer's authority feed manifest.
 
 Given a peer's ``authority_feed_manifest_url`` (from the federation
-descriptor), downloads the manifest and optionally verifies SHA-256
-hashes of each artifact.
+descriptor), downloads the manifest and verifies SHA-256 hashes of
+each artifact.
 
 Usage:
-    python scripts/fetch_peer_authority.py <manifest-url> [--output-dir .federation/peer-feeds]
+    python scripts/fetch_peer_authority.py <manifest-url>
     python scripts/fetch_peer_authority.py --peers .federation/peers.json
 """
 from __future__ import annotations
 
 import argparse
 import json
-import os
-import subprocess
 import sys
 from hashlib import sha256
 from pathlib import Path
 
-
-def _curl_bytes(url: str, token: str | None = None) -> bytes | None:
-    cmd = ["curl", "-sfL"]
-    if token:
-        cmd += ["-H", f"Authorization: token {token}"]
-    cmd.append(url)
-    result = subprocess.run(cmd, capture_output=True)
-    if result.returncode != 0:
-        return None
-    return result.stdout
+from federation_utils import curl_bytes, curl_json
 
 
-def _curl_json(url: str, token: str | None = None) -> dict | None:
-    raw = _curl_bytes(url, token)
-    if raw is None:
-        return None
-    try:
-        return json.loads(raw)
-    except json.JSONDecodeError:
-        return None
-
-
-def fetch_and_verify(manifest_url: str, output_dir: Path, *, token: str | None = None) -> dict:
+def fetch_and_verify(manifest_url: str, output_dir: Path) -> dict:
     """Fetch the manifest and each artifact.  Returns a verification report."""
-    manifest = _curl_json(manifest_url, token)
-    if manifest is None:
+    manifest = curl_json(manifest_url)
+    if not isinstance(manifest, dict):
         return {"manifest_url": manifest_url, "status": "unreachable"}
 
     base_url = manifest_url.rsplit("/", 1)[0]
@@ -66,7 +45,7 @@ def fetch_and_verify(manifest_url: str, output_dir: Path, *, token: str | None =
     # Fetch and verify artifacts
     for rel_path, meta in (manifest.get("artifacts") or {}).items():
         artifact_url = f"{base_url}/{meta['path']}"
-        raw = _curl_bytes(artifact_url, token)
+        raw = curl_bytes(artifact_url)
         if raw is None:
             report["artifacts"][rel_path] = {"status": "unreachable"}
             report["status"] = "partial"
@@ -98,7 +77,6 @@ def main() -> int:
     parser.add_argument("--output-dir", default=".federation/peer-feeds")
     args = parser.parse_args()
 
-    token = os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
     output_dir = Path(args.output_dir)
 
     urls: list[str] = []
@@ -118,7 +96,7 @@ def main() -> int:
     reports: list[dict] = []
     for url in urls:
         print(f"Fetching {url} …")
-        report = fetch_and_verify(url, output_dir, token=token)
+        report = fetch_and_verify(url, output_dir)
         reports.append(report)
         status = report["status"]
         marker = "ok" if status == "ok" else f"** {status} **"
@@ -126,7 +104,7 @@ def main() -> int:
 
     summary_path = output_dir / "verification-report.json"
     summary_path.parent.mkdir(parents=True, exist_ok=True)
-    summary_path.write_text(json.dumps(reports, indent=2) + "\n")
+    summary_path.write_text(json.dumps(reports, indent=2, sort_keys=True) + "\n")
     print(f"\nVerification report → {summary_path}")
 
     return 0 if all(r["status"] == "ok" for r in reports) else 1

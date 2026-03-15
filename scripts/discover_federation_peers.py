@@ -9,60 +9,47 @@ Requires either ``GITHUB_TOKEN`` env-var or unauthenticated access.
 Usage:
     python scripts/discover_federation_peers.py [--output .federation/peers.json]
     python scripts/discover_federation_peers.py --org kimeisele
+    python scripts/discover_federation_peers.py --seeds-only
 """
 from __future__ import annotations
 
 import argparse
 import json
 import os
-import subprocess
 import sys
 from pathlib import Path
 
+from federation_utils import curl_json
 
 TOPIC = "agent-federation-node"
 SEARCH_API = "https://api.github.com/search/repositories"
 RAW_BASE = "https://raw.githubusercontent.com"
 
 
-def _curl_json(url: str, token: str | None = None) -> dict | list | None:
-    """Fetch JSON from *url* using curl.  Returns None on failure."""
-    cmd = ["curl", "-sf", "-H", "Accept: application/json"]
-    if token:
-        cmd += ["-H", f"Authorization: token {token}"]
-    cmd.append(url)
-    result = subprocess.run(cmd, capture_output=True, text=True)
-    if result.returncode != 0:
-        return None
-    try:
-        return json.loads(result.stdout)
-    except json.JSONDecodeError:
-        return None
-
-
-def _fetch_descriptor(full_name: str, default_branch: str, token: str | None) -> dict | None:
+def _fetch_descriptor(full_name: str, default_branch: str) -> dict | None:
     url = f"{RAW_BASE}/{full_name}/{default_branch}/.well-known/agent-federation.json"
-    return _curl_json(url, token)
+    data = curl_json(url)
+    return data if isinstance(data, dict) else None
 
 
-def _fetch_agent_card(full_name: str, default_branch: str, token: str | None) -> dict | None:
+def _fetch_agent_card(full_name: str, default_branch: str) -> dict | None:
     url = f"{RAW_BASE}/{full_name}/{default_branch}/.well-known/agent.json"
-    return _curl_json(url, token)
+    data = curl_json(url)
+    return data if isinstance(data, dict) else None
 
 
 def discover(
     *,
-    token: str | None = None,
     org: str | None = None,
     exclude_self: str | None = None,
 ) -> list[dict]:
-    """Return a list of peer records discovered from GitHub."""
+    """Return a list of peer records discovered from GitHub topic search."""
     query = f"topic:{TOPIC}"
     if org:
         query += f" org:{org}"
     url = f"{SEARCH_API}?q={query}&per_page=100"
-    data = _curl_json(url, token)
-    if not data or "items" not in data:
+    data = curl_json(url)
+    if not isinstance(data, dict) or "items" not in data:
         print("warning: GitHub search returned no results", file=sys.stderr)
         return []
 
@@ -73,8 +60,8 @@ def discover(
             continue
         default_branch = repo.get("default_branch", "main")
 
-        descriptor = _fetch_descriptor(full_name, default_branch, token)
-        agent_card = _fetch_agent_card(full_name, default_branch, token)
+        descriptor = _fetch_descriptor(full_name, default_branch)
+        agent_card = _fetch_agent_card(full_name, default_branch)
 
         peer: dict = {
             "full_name": full_name,
@@ -104,16 +91,15 @@ def _load_seeds(repo_root: Path | None = None) -> list[str]:
     return data.get("descriptor_urls", [])
 
 
-def discover_from_seeds(*, token: str | None = None, repo_root: Path | None = None) -> list[dict]:
+def discover_from_seeds(*, repo_root: Path | None = None) -> list[dict]:
     """Discover peers by fetching known descriptor seed URLs directly."""
     urls = _load_seeds(repo_root)
     peers: list[dict] = []
     for url in urls:
-        descriptor = _curl_json(url, token)
-        if not descriptor:
+        descriptor = curl_json(url)
+        if not isinstance(descriptor, dict):
             continue
         # Derive repo info from the URL pattern
-        # e.g. https://raw.githubusercontent.com/org/repo/branch/.well-known/...
         parts = url.split("/")
         if len(parts) >= 5 and "githubusercontent" in parts[2]:
             full_name = f"{parts[3]}/{parts[4]}"
@@ -139,14 +125,12 @@ def main() -> int:
     parser.add_argument("--repo", default=os.environ.get("GITHUB_REPOSITORY", ""))
     args = parser.parse_args()
 
-    token = os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
-
     # Merge seed-based and topic-based discovery
     seen: set[str] = set()
     peers: list[dict] = []
 
     # Always try seeds first (works without authentication)
-    seed_peers = discover_from_seeds(token=token)
+    seed_peers = discover_from_seeds()
     for p in seed_peers:
         if p["full_name"] not in seen:
             seen.add(p["full_name"])
@@ -156,7 +140,7 @@ def main() -> int:
 
     # Then augment with GitHub topic search (unless --seeds-only)
     if not args.seeds_only:
-        topic_peers = discover(token=token, org=args.org, exclude_self=args.repo or None)
+        topic_peers = discover(org=args.org, exclude_self=args.repo or None)
         for p in topic_peers:
             if p["full_name"] not in seen:
                 seen.add(p["full_name"])

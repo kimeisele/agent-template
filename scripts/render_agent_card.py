@@ -1,8 +1,7 @@
-"""Generate .well-known/agent.json (A2A-compatible Agent Card).
+"""Generate .well-known/agent.json (A2A-inspired agent card).
 
-Reads the federation descriptor and authority charter to produce an
-Agent Card that enables capability discovery by other agents and
-orchestration platforms.
+Reads the federation descriptor and capability manifest to produce
+a machine-readable agent card for capability discovery.
 
 Usage:
     python scripts/render_agent_card.py [--output .well-known/agent.json]
@@ -30,7 +29,7 @@ def _load_capability_manifest(repo_root: Path) -> dict:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Render A2A Agent Card")
+    parser = argparse.ArgumentParser(description="Render agent card")
     parser.add_argument("--output", default=".well-known/agent.json")
     parser.add_argument("--repo", default=os.environ.get("GITHUB_REPOSITORY", "kimeisele/agent-template"))
     args = parser.parse_args()
@@ -39,11 +38,11 @@ def main() -> int:
     repo_owner, repo_name = args.repo.split("/", 1)
     descriptor = _load_descriptor(repo_root)
     manifest = _load_capability_manifest(repo_root)
-    display_name = descriptor.get("display_name", repo_name)
-    description = manifest.get("description", f"{display_name} — a federation node in the agent-internet.")
+    name = descriptor.get("display_name", repo_name)
+    description = manifest.get("description", f"{name} — a federation node in the agent-internet.")
 
     card = {
-        "name": display_name,
+        "name": name,
         "description": description,
         "url": f"https://github.com/{repo_owner}/{repo_name}",
         "version": "1.0.0",
@@ -67,7 +66,7 @@ def main() -> int:
 
     output = Path(args.output)
     output.parent.mkdir(parents=True, exist_ok=True)
-    output.write_text(json.dumps(card, indent=2) + "\n")
+    output.write_text(json.dumps(card, indent=2, sort_keys=True) + "\n")
     return 0
 
 

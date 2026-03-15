@@ -5,9 +5,7 @@ import json
 import os
 from pathlib import Path
 
-
-def _display_name(repo_name: str) -> str:
-    return " ".join(word.capitalize() for word in repo_name.replace("_", "-").split("-") if word) or repo_name
+from federation_utils import display_name
 
 
 def _load_capabilities(repo_root: Path) -> list[str]:
@@ -24,7 +22,7 @@ def main() -> int:
     parser.add_argument("--repo", default=os.environ.get("GITHUB_REPOSITORY", "kimeisele/agent-template"))
     parser.add_argument("--status", default="active")
     parser.add_argument("--layer", default="node")
-    parser.add_argument("--intent", action="append", default=["public_authority_page"])
+    parser.add_argument("--intent", nargs="*", default=["public_authority_page"])
     args = parser.parse_args()
 
     repo_root = Path(__file__).resolve().parents[1]
@@ -33,7 +31,7 @@ def main() -> int:
         "kind": "agent_federation_descriptor",
         "version": 1,
         "repo_id": repo_name,
-        "display_name": _display_name(repo_name),
+        "display_name": display_name(repo_name),
         "authority_feed_manifest_url": f"https://raw.githubusercontent.com/{repo_owner}/{repo_name}/authority-feed/latest-authority-manifest.json",
         "projection_intents": list(dict.fromkeys(args.intent)),
         "status": args.status,
@@ -47,7 +45,7 @@ def main() -> int:
     }
     output = Path(args.output)
     output.parent.mkdir(parents=True, exist_ok=True)
-    output.write_text(json.dumps(payload, indent=2) + "\n")
+    output.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n")
     return 0
 
 

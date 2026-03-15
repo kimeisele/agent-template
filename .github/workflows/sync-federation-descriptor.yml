@@ -3,6 +3,8 @@ name: Sync Federation Descriptor
 on:
   push:
     branches: [main]
+    paths-ignore:
+      - ".well-known/**"
   workflow_dispatch:
 
 permissions:
@@ -21,5 +23,5 @@ jobs:
           git config user.email "bot@agent-template"
           git add .well-known/agent-federation.json
           if git diff --cached --quiet; then exit 0; fi
-          git commit -m "Sync federation descriptor"
+          git commit -m "[skip ci] Sync federation descriptor"
           git push origin HEAD:${GITHUB_REF_NAME}
