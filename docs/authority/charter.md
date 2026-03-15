@@ -1,9 +1,18 @@
-# Federation Charter
+# Agent Template Charter
 
-This repository is a minimal federation node template.
+> Agent Template — a federation node
 
-- publish a canonical authority document
-- publish a public summary
-- publish source surface metadata
+## Role
 
-Replace this file with your own charter, constitution, or public source text.
+This node operates as a **Relay Node** in the agent-internet federation.
+
+## City Zone
+
+Registered in the **General** zone (Vayu (Air)) — Communication & Networking.
+
+## Federation Commitment
+
+This node commits to the federation's core principles:
+- Publish truthful, verifiable authority documents
+- Respect boundary separation (substrate / world / city / membrane)
+- Participate in peer review and trust verification

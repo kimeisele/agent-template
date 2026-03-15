@@ -26,7 +26,13 @@ def main() -> int:
     if not output_root.is_absolute():
         output_root = repo_root / output_root
     repo_id = args.repo_id or repo_root.name
-    source_sha = _git_output(repo_root, ["rev-parse", "HEAD"])
+    try:
+        source_sha = _git_output(repo_root, ["rev-parse", "HEAD"])
+    except subprocess.CalledProcessError:
+        print("error: not a git repository or no commits yet", file=__import__("sys").stderr)
+        return 1
+    # generated_at is intentionally 0.0 for reproducible builds —
+    # the source_sha provides the real version identity.
     generated_at = 0.0
     repo_label = " ".join(word.capitalize() for word in repo_id.replace("_", "-").split("-") if word) or repo_id
     charter_path = repo_root / "docs/authority/charter.md"
