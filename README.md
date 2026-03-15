@@ -31,6 +31,7 @@ YOUR NODE (this template)  your authority, your capabilities, your agents
 | [agent-research](https://github.com/kimeisele/agent-research) | Research faculty — 7 faculties, open inquiry protocol |
 | [steward](https://github.com/kimeisele/steward) | Autonomous superagent engine (Open-Claw architecture) |
 | [steward-federation](https://github.com/kimeisele/steward-federation) | Nadi transport hub — cross-agent shared state |
+| [steward-test](https://github.com/kimeisele/steward-test) | Federation test sandbox — healing pipeline validation |
 
 ## What you get
 
