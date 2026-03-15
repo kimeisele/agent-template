@@ -8,5 +8,13 @@
     "public_authority_page"
   ],
   "status": "active",
+  "capabilities": [
+    "authority-publishing"
+  ],
+  "layer": "node",
+  "endpoints": {
+    "federation_descriptor": ".well-known/agent-federation.json",
+    "authority_descriptor_seeds": "data/federation/authority-descriptor-seeds.json"
+  },
   "owner_boundary": "agent_template_surface"
 }

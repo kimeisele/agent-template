@@ -22,18 +22,11 @@ def _load_descriptor(repo_root: Path) -> dict:
     return {}
 
 
-def _load_skills(repo_root: Path) -> list[dict]:
+def _load_capability_manifest(repo_root: Path) -> dict:
     caps_path = repo_root / "docs" / "authority" / "capabilities.json"
     if caps_path.exists():
-        data = json.loads(caps_path.read_text())
-        return data.get("skills", [])
-    return [
-        {
-            "id": "authority-publishing",
-            "name": "Authority Publishing",
-            "description": "Publish canonical authority documents, charters, and surface metadata to the federation.",
-        }
-    ]
+        return json.loads(caps_path.read_text())
+    return {}
 
 
 def main() -> int:
@@ -45,25 +38,29 @@ def main() -> int:
     repo_root = Path(__file__).resolve().parents[1]
     repo_owner, repo_name = args.repo.split("/", 1)
     descriptor = _load_descriptor(repo_root)
+    manifest = _load_capability_manifest(repo_root)
     display_name = descriptor.get("display_name", repo_name)
+    description = manifest.get("description", f"{display_name} — a federation node in the agent-internet.")
 
     card = {
         "name": display_name,
-        "description": f"{display_name} — a federation node in the agent-internet.",
+        "description": description,
         "url": f"https://github.com/{repo_owner}/{repo_name}",
         "version": "1.0.0",
         "capabilities": {
             "streaming": False,
             "pushNotifications": False,
         },
-        "skills": _load_skills(repo_root),
+        "skills": manifest.get("skills", []),
         "provider": {
             "organization": repo_owner,
         },
         "federation": {
             "node_topic": "agent-federation-node",
+            "node_role": manifest.get("node_role", "federation_node"),
             "descriptor_path": ".well-known/agent-federation.json",
             "authority_feed_branch": "authority-feed",
+            "interfaces": manifest.get("federation_interfaces", {}),
             "peer_discovery": True,
         },
     }

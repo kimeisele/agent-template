@@ -93,15 +93,77 @@ def discover(
     return peers
 
 
+def _load_seeds(repo_root: Path | None = None) -> list[str]:
+    """Load descriptor URLs from authority-descriptor-seeds.json."""
+    if repo_root is None:
+        repo_root = Path(__file__).resolve().parents[1]
+    seeds_path = repo_root / "data" / "federation" / "authority-descriptor-seeds.json"
+    if not seeds_path.exists():
+        return []
+    data = json.loads(seeds_path.read_text())
+    return data.get("descriptor_urls", [])
+
+
+def discover_from_seeds(*, token: str | None = None, repo_root: Path | None = None) -> list[dict]:
+    """Discover peers by fetching known descriptor seed URLs directly."""
+    urls = _load_seeds(repo_root)
+    peers: list[dict] = []
+    for url in urls:
+        descriptor = _curl_json(url, token)
+        if not descriptor:
+            continue
+        # Derive repo info from the URL pattern
+        # e.g. https://raw.githubusercontent.com/org/repo/branch/.well-known/...
+        parts = url.split("/")
+        if len(parts) >= 5 and "githubusercontent" in parts[2]:
+            full_name = f"{parts[3]}/{parts[4]}"
+        else:
+            full_name = descriptor.get("repo_id", "unknown")
+        peers.append({
+            "full_name": full_name,
+            "html_url": f"https://github.com/{full_name}",
+            "default_branch": "main",
+            "description": descriptor.get("display_name", ""),
+            "topics": [],
+            "federation_descriptor": descriptor,
+            "discovery_method": "seed",
+        })
+    return peers
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Discover federation peers via GitHub API")
     parser.add_argument("--output", default=".federation/peers.json")
     parser.add_argument("--org", help="Limit discovery to a specific GitHub org")
+    parser.add_argument("--seeds-only", action="store_true", help="Only use descriptor seeds (no GitHub search)")
     parser.add_argument("--repo", default=os.environ.get("GITHUB_REPOSITORY", ""))
     args = parser.parse_args()
 
     token = os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
-    peers = discover(token=token, org=args.org, exclude_self=args.repo or None)
+
+    # Merge seed-based and topic-based discovery
+    seen: set[str] = set()
+    peers: list[dict] = []
+
+    # Always try seeds first (works without authentication)
+    seed_peers = discover_from_seeds(token=token)
+    for p in seed_peers:
+        if p["full_name"] not in seen:
+            seen.add(p["full_name"])
+            peers.append(p)
+    if seed_peers:
+        print(f"Seeds: {len(seed_peers)} peer(s) from authority-descriptor-seeds.json")
+
+    # Then augment with GitHub topic search (unless --seeds-only)
+    if not args.seeds_only:
+        topic_peers = discover(token=token, org=args.org, exclude_self=args.repo or None)
+        for p in topic_peers:
+            if p["full_name"] not in seen:
+                seen.add(p["full_name"])
+                p["discovery_method"] = "topic_search"
+                peers.append(p)
+        if topic_peers:
+            print(f"Topic search: {len(topic_peers)} peer(s) from GitHub")
 
     output = Path(args.output)
     output.parent.mkdir(parents=True, exist_ok=True)
@@ -112,7 +174,7 @@ def main() -> int:
         "peers": peers,
     }
     output.write_text(json.dumps(registry, indent=2, sort_keys=True) + "\n")
-    print(f"Discovered {len(peers)} peer(s) → {output}")
+    print(f"Total: {len(peers)} unique peer(s) → {output}")
     return 0
 
 

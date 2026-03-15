@@ -1,6 +1,6 @@
 {
   "name": "Agent Template",
-  "description": "A minimal federation node template for the agent-internet.",
+  "description": "A minimal federation node template. Replace this with your node's purpose.",
   "url": "https://github.com/kimeisele/agent-template",
   "version": "1.0.0",
   "capabilities": {
@@ -19,8 +19,20 @@
   },
   "federation": {
     "node_topic": "agent-federation-node",
+    "node_role": "federation_node",
     "descriptor_path": ".well-known/agent-federation.json",
     "authority_feed_branch": "authority-feed",
+    "interfaces": {
+      "produces": [
+        "authority_document",
+        "canonical_surface",
+        "public_summary"
+      ],
+      "consumes": [],
+      "protocols": [
+        "authority_feed_v1"
+      ]
+    },
     "peer_discovery": true
   }
 }

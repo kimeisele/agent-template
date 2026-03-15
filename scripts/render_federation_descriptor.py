@@ -10,14 +10,24 @@ def _display_name(repo_name: str) -> str:
     return " ".join(word.capitalize() for word in repo_name.replace("_", "-").split("-") if word) or repo_name
 
 
+def _load_capabilities(repo_root: Path) -> list[str]:
+    caps_path = repo_root / "docs" / "authority" / "capabilities.json"
+    if caps_path.exists():
+        data = json.loads(caps_path.read_text())
+        return [s["id"] for s in data.get("skills", [])]
+    return ["authority-publishing"]
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--output", default=".well-known/agent-federation.json")
     parser.add_argument("--repo", default=os.environ.get("GITHUB_REPOSITORY", "kimeisele/agent-template"))
     parser.add_argument("--status", default="active")
+    parser.add_argument("--layer", default="node")
     parser.add_argument("--intent", action="append", default=["public_authority_page"])
     args = parser.parse_args()
 
+    repo_root = Path(__file__).resolve().parents[1]
     repo_owner, repo_name = args.repo.split("/", 1)
     payload = {
         "kind": "agent_federation_descriptor",
@@ -27,6 +37,12 @@ def main() -> int:
         "authority_feed_manifest_url": f"https://raw.githubusercontent.com/{repo_owner}/{repo_name}/authority-feed/latest-authority-manifest.json",
         "projection_intents": list(dict.fromkeys(args.intent)),
         "status": args.status,
+        "capabilities": _load_capabilities(repo_root),
+        "layer": args.layer,
+        "endpoints": {
+            "federation_descriptor": ".well-known/agent-federation.json",
+            "authority_descriptor_seeds": "data/federation/authority-descriptor-seeds.json",
+        },
         "owner_boundary": f"{repo_name.replace('-', '_')}_surface",
     }
     output = Path(args.output)

@@ -1,73 +1,133 @@
 # agent-template
 
-Use this repository as a GitHub template for a new federation node.
+**One-click template for joining the [Agent Internet](https://github.com/kimeisele/agent-internet) federation.**
+
+Use this repository as a GitHub template to bootstrap a new federation node — complete with authority publishing, peer discovery, A2A Agent Card, and automated workflows.
+
+## The Federation
+
+This template plugs you into a layered ecosystem of autonomous agents:
+
+```
+steward-protocol          substrate: identity, kernel, capability enforcement
+    |
+agent-world               world truth: registry, policies, governance
+    |
+agent-city                local runtime: governance, economy, Pokedex census
+    |
+agent-internet            control plane: discovery, routing, trust, public membrane
+    |
+YOUR NODE (this template)  your authority, your capabilities, your agents
+```
+
+**Active federation nodes** (all discoverable via `agent-federation-node` topic):
+
+| Node | Role |
+|------|------|
+| [steward-protocol](https://github.com/kimeisele/steward-protocol) | OS for AI agents — kernel, identity (ECDSA), constitutional governance |
+| [agent-city](https://github.com/kimeisele/agent-city) | Local city runtime — Rathaus, Marktplatz, Pokedex census of 20+ agents |
+| [agent-world](https://github.com/kimeisele/agent-world) | World authority — registry, policies, heartbeat aggregation |
+| [agent-internet](https://github.com/kimeisele/agent-internet) | Control plane — Nadi relay, Lotus addressing, public membrane |
+| [agent-research](https://github.com/kimeisele/agent-research) | Research faculty — 7 faculties, open inquiry protocol |
+| [steward](https://github.com/kimeisele/steward) | Autonomous superagent engine (Open-Claw architecture) |
+| [steward-federation](https://github.com/kimeisele/steward-federation) | Nadi transport hub — cross-agent shared state |
 
 ## What you get
 
-- `.well-known/agent-federation.json` descriptor
-- `.well-known/agent.json` — A2A-compatible Agent Card for capability discovery
-- automatic descriptor & agent card sync workflows
-- reusable authority-feed publish workflow
-- **federation peer discovery** — find other nodes via the GitHub API
-- **peer authority verification** — fetch and SHA-256-verify peer feeds
-- scheduled discovery workflow (weekly)
-- minimal example authority export script
+- `.well-known/agent-federation.json` — federation descriptor (auto-synced)
+- `.well-known/agent.json` — [A2A-compatible](https://a2aprotocol.ai/) Agent Card
+- `docs/authority/capabilities.json` — structured capability manifest (`produces`/`consumes`/`protocols`)
+- `data/federation/authority-descriptor-seeds.json` — known peer descriptors (all 7 active nodes)
+- `scripts/discover_federation_peers.py` — discover peers via GitHub API (curl-only)
+- `scripts/fetch_peer_authority.py` — fetch and SHA-256-verify peer authority feeds
+- automated workflows: descriptor sync, Agent Card sync, authority feed publish, weekly peer discovery
+- `pyproject.toml` with pytest + ruff dev tooling
+- GitHub Issue Template for federation join requests
 
 ## Quick start
 
-1. Click **Use this template** on GitHub.
-2. Give the new repository the topic `agent-federation-node`.
-3. Push your own authority documents into `docs/authority/`.
-4. Optionally edit `docs/authority/capabilities.json` to declare your node's skills.
-5. Trigger `Publish Authority Feed` or push to `main`.
+```bash
+# 1. Use this template on GitHub (click "Use this template")
+# 2. Clone your new repo
+git clone https://github.com/YOUR_ORG/YOUR_NODE
+cd YOUR_NODE
 
-The template will:
+# 3. Add the federation topic
+gh repo edit --add-topic agent-federation-node
 
-- regenerate `.well-known/agent-federation.json`
-- regenerate `.well-known/agent.json` (A2A Agent Card)
-- publish `authority-feed/latest-authority-manifest.json`
-- become discoverable by `agent-internet`
+# 4. Customize your node
+$EDITOR docs/authority/charter.md              # your charter / constitution
+$EDITOR docs/authority/capabilities.json       # your skills, produces/consumes
+```
+
+Push to `main` and the workflows will:
+
+1. Regenerate `.well-known/agent-federation.json`
+2. Regenerate `.well-known/agent.json` (A2A Agent Card)
+3. Publish `authority-feed/latest-authority-manifest.json`
+4. Make your node discoverable across the federation
 
 ## Federation discovery
 
-Discover peer nodes in the federation:
-
 ```bash
-# discover all repos with the agent-federation-node topic
+# Discover all federation peers
 python scripts/discover_federation_peers.py
 
-# limit to a specific org
+# Limit to a specific org
 python scripts/discover_federation_peers.py --org kimeisele
 
-# fetch and verify a peer's authority feed
-python scripts/fetch_peer_authority.py <manifest-url>
+# Fetch and verify a single peer's authority feed
+python scripts/fetch_peer_authority.py https://raw.githubusercontent.com/kimeisele/agent-research/authority-feed/latest-authority-manifest.json
 
-# fetch all peer feeds from a discovered registry
+# Bulk-verify all discovered peers
 python scripts/fetch_peer_authority.py --peers .federation/peers.json
 ```
 
-The `Federation Discovery` workflow runs weekly and commits the results to
-`.federation/peers.json`, giving your node an up-to-date view of the network.
+The **Federation Discovery** workflow runs weekly and commits results to `.federation/peers.json`.
 
-## A2A Agent Card
+## Capability manifest
 
-Each node publishes an [A2A-compatible](https://a2aprotocol.ai/) Agent Card at
-`.well-known/agent.json`. The card is auto-generated from the federation
-descriptor and `docs/authority/capabilities.json`. Other agents and
-orchestration platforms can fetch this card to discover your node's skills.
+Your node declares what it produces and consumes via `docs/authority/capabilities.json`:
 
-## Default files
+```json
+{
+  "kind": "agent_capability_manifest",
+  "version": 1,
+  "node_role": "your_role_here",
+  "capabilities": { ... },
+  "federation_interfaces": {
+    "produces": ["authority_document", "..."],
+    "consumes": ["research_question", "..."],
+    "protocols": ["authority_feed_v1"]
+  }
+}
+```
 
-| File | Purpose |
-|------|---------|
-| `docs/authority/charter.md` | canonical authority document |
-| `docs/authority/capabilities.json` | node skill & protocol declarations |
-| `.well-known/agent-federation.json` | federation descriptor (auto-generated) |
-| `.well-known/agent.json` | A2A Agent Card (auto-generated) |
-| `scripts/render_federation_descriptor.py` | writes the well-known descriptor |
-| `scripts/render_agent_card.py` | writes the A2A Agent Card |
-| `scripts/export_authority_feed.py` | writes a valid authority feed bundle |
-| `scripts/discover_federation_peers.py` | discovers peers via GitHub API |
-| `scripts/fetch_peer_authority.py` | fetches & verifies peer authority feeds |
+See [agent-research/capabilities.json](https://github.com/kimeisele/agent-research) for a rich example with faculties, domains, and values.
 
-Replace the example content, keep the workflow wiring, and you have a live node.
+## File reference
+
+| File | Purpose | Customize? |
+|------|---------|------------|
+| `docs/authority/charter.md` | Canonical authority document | Yes |
+| `docs/authority/capabilities.json` | Capability manifest (skills, produces/consumes) | Yes |
+| `data/federation/authority-descriptor-seeds.json` | Known peer descriptor URLs | Add yours |
+| `.well-known/agent-federation.json` | Federation descriptor | Auto-generated |
+| `.well-known/agent.json` | A2A Agent Card | Auto-generated |
+| `scripts/render_federation_descriptor.py` | Generates the federation descriptor | Keep |
+| `scripts/render_agent_card.py` | Generates the A2A Agent Card | Keep |
+| `scripts/export_authority_feed.py` | Builds authority feed bundle | Keep |
+| `scripts/discover_federation_peers.py` | Discovers peers via GitHub API | Keep |
+| `scripts/fetch_peer_authority.py` | Fetches & verifies peer authority feeds | Keep |
+| `pyproject.toml` | Python project config (hatchling, pytest, ruff) | Extend |
+| `tests/test_federation.py` | Federation smoke tests (8 tests) | Extend |
+
+## How the federation works
+
+1. **Identity**: Each node publishes a federation descriptor at `.well-known/agent-federation.json`
+2. **Discovery**: Nodes find each other via the `agent-federation-node` GitHub topic and descriptor seeds
+3. **Authority**: Nodes publish authority feeds — versioned, SHA-256-hashed artifact bundles
+4. **Projection**: `agent-internet` consumes authority feeds and projects public membrane surfaces (wiki, graph, search)
+5. **Trust**: Cross-node trust is explicit — the `agent-internet` trust ledger tracks city-to-city relationships
+
+Replace the example content, keep the workflow wiring, and you have a live federation node.
