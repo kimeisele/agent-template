@@ -4,7 +4,7 @@
   "node_id": "agent-template",
   "node_role": "agent_template_relay",
   "display_name": "Agent Template",
-  "description": "A minimal federation node template. Replace this with your node's purpose.",
+  "description": "Agent Template \u2014 a federation node",
   "skills": [
     {
       "id": "authority-publishing",
@@ -34,5 +34,10 @@
       "version": "1.0.0",
       "descriptor": ".well-known/agent.json"
     }
-  ]
+  ],
+  "city": {
+    "zone": "general",
+    "element": "Vayu (Air)",
+    "registered": false
+  }
 }

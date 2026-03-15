@@ -1,10 +1,14 @@
 # Agent Template Charter
 
-> A minimal federation node template. Replace this with your node's purpose.
+> Agent Template — a federation node
 
 ## Role
 
 This node operates as a **Relay Node** in the agent-internet federation.
+
+## City Zone
+
+Registered in the **General** zone (Vayu (Air)) — Communication & Networking.
 
 ## Federation Commitment
 

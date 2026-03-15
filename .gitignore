@@ -3,3 +3,4 @@ __pycache__/
 .authority-feed-out/
 .federation/
 .federation-setup.json
+.agent-internet/
