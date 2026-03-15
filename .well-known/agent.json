@@ -1,0 +1,26 @@
+{
+  "name": "Agent Template",
+  "description": "A minimal federation node template for the agent-internet.",
+  "url": "https://github.com/kimeisele/agent-template",
+  "version": "1.0.0",
+  "capabilities": {
+    "streaming": false,
+    "pushNotifications": false
+  },
+  "skills": [
+    {
+      "id": "authority-publishing",
+      "name": "Authority Publishing",
+      "description": "Publish canonical authority documents, charters, and surface metadata to the federation."
+    }
+  ],
+  "provider": {
+    "organization": "kimeisele"
+  },
+  "federation": {
+    "node_topic": "agent-federation-node",
+    "descriptor_path": ".well-known/agent-federation.json",
+    "authority_feed_branch": "authority-feed",
+    "peer_discovery": true
+  }
+}

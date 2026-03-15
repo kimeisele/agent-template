@@ -1,0 +1,23 @@
+{
+  "kind": "node_capabilities",
+  "version": 1,
+  "skills": [
+    {
+      "id": "authority-publishing",
+      "name": "Authority Publishing",
+      "description": "Publish canonical authority documents, charters, and surface metadata to the federation."
+    }
+  ],
+  "protocols": [
+    {
+      "name": "agent-federation",
+      "version": 1,
+      "descriptor": ".well-known/agent-federation.json"
+    },
+    {
+      "name": "a2a-agent-card",
+      "version": "1.0.0",
+      "descriptor": ".well-known/agent.json"
+    }
+  ]
+}
