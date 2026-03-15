@@ -53,16 +53,37 @@ YOUR NODE (this template)  your authority, your capabilities, your agents
 git clone https://github.com/YOUR_ORG/YOUR_NODE
 cd YOUR_NODE
 
-# 3. Add the federation topic
-gh repo edit --add-topic agent-federation-node
-
-# 4. Customize your node
-$EDITOR docs/authority/charter.md              # your charter / constitution
-$EDITOR docs/authority/capabilities.json       # your skills, produces/consumes
+# 3. Run the interactive setup wizard
+python scripts/setup_node.py
 ```
 
+The wizard asks you a few questions — name, role, capabilities, domains — and
+configures everything automatically. The core federation kernel (descriptor,
+authority feed, peer discovery, A2A card) is always included.
+
+### Five tiers
+
+| Tier | What you get |
+|------|-------------|
+| **Relay** | Minimal presence — publish charter, be discoverable, relay trust |
+| **Contributor** | Active participant — publish docs, consume peer feeds, respond to inquiries |
+| **Research** | Knowledge producer — research synthesis, cross-domain analysis, open inquiry |
+| **Service** | Capability provider — offer tools, APIs, or agent services |
+| **Governance** | Policy and trust — propose policies, vote, participate in governance |
+
+Every tier includes the full federation kernel. You can re-run the wizard anytime.
+
+### Manual setup (if you prefer)
+
 ```bash
-# 5. Verify everything works
+# Edit files directly
+$EDITOR docs/authority/charter.md              # your charter / constitution
+$EDITOR docs/authority/capabilities.json       # your skills, produces/consumes
+
+# Add the federation topic
+gh repo edit --add-topic agent-federation-node
+
+# Verify everything works
 python scripts/quickstart.py
 ```
 
@@ -120,6 +141,8 @@ See [agent-research/capabilities.json](https://github.com/kimeisele/agent-resear
 | `data/federation/authority-descriptor-seeds.json` | Known peer descriptor URLs | Add yours |
 | `.well-known/agent-federation.json` | Federation descriptor | Auto-generated |
 | `.well-known/agent.json` | A2A Agent Card | Auto-generated |
+| `scripts/setup_node.py` | Interactive setup wizard (configures everything) | Run once |
+| `scripts/quickstart.py` | Validates node configuration in 60 seconds | Run anytime |
 | `scripts/render_federation_descriptor.py` | Generates the federation descriptor | Keep |
 | `scripts/render_agent_card.py` | Generates the A2A Agent Card | Keep |
 | `scripts/export_authority_feed.py` | Builds authority feed bundle | Keep |

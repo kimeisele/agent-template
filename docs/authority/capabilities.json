@@ -2,28 +2,21 @@
   "kind": "agent_capability_manifest",
   "version": 1,
   "node_id": "agent-template",
-  "node_role": "federation_node",
+  "node_role": "agent_template_relay",
   "display_name": "Agent Template",
   "description": "A minimal federation node template. Replace this with your node's purpose.",
   "skills": [
     {
       "id": "authority-publishing",
       "name": "Authority Publishing",
-      "description": "Publish canonical authority documents, charters, and surface metadata to the federation."
+      "description": "Authority Publishing capability."
     }
   ],
-  "capabilities": {
-    "authority_publishing": {
-      "description": "Publish and maintain canonical authority documents in the federation",
-      "input": "authority_document",
-      "output": "authority_feed"
-    }
-  },
+  "capabilities": {},
   "federation_interfaces": {
     "produces": [
       "authority_document",
-      "canonical_surface",
-      "public_summary"
+      "canonical_surface"
     ],
     "consumes": [],
     "protocols": [

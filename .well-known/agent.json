@@ -11,7 +11,7 @@
     {
       "id": "authority-publishing",
       "name": "Authority Publishing",
-      "description": "Publish canonical authority documents, charters, and surface metadata to the federation."
+      "description": "Authority Publishing capability."
     }
   ],
   "provider": {
@@ -19,14 +19,13 @@
   },
   "federation": {
     "node_topic": "agent-federation-node",
-    "node_role": "federation_node",
+    "node_role": "agent_template_relay",
     "descriptor_path": ".well-known/agent-federation.json",
     "authority_feed_branch": "authority-feed",
     "interfaces": {
       "produces": [
         "authority_document",
-        "canonical_surface",
-        "public_summary"
+        "canonical_surface"
       ],
       "consumes": [],
       "protocols": [

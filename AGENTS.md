@@ -28,6 +28,19 @@ tests/
   test_federation.py               ← 8 smoke tests
 ```
 
+## Setup
+
+```bash
+# Interactive setup wizard (configures charter, capabilities, descriptors)
+python scripts/setup_node.py
+
+# Non-interactive (CI/scripting)
+python scripts/setup_node.py --non-interactive --name "My Node" --role research --org myorg
+```
+
+Tiers: `relay`, `contributor`, `research`, `service`, `governance`.
+Every tier includes the core federation kernel.
+
 ## Build & test
 
 ```bash
