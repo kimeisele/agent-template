@@ -1,0 +1,82 @@
+# AGENTS.md
+
+Instructions for AI coding agents working on this repository.
+
+## Overview
+
+This is a **federation node template** for the [agent-internet](https://github.com/kimeisele/agent-internet) mesh.
+It publishes authority documents, exposes an A2A Agent Card, and discovers peer nodes via GitHub API.
+
+## Architecture
+
+```
+.well-known/
+  agent-federation.json    ← federation descriptor (auto-generated)
+  agent.json               ← A2A Agent Card (auto-generated)
+docs/authority/
+  charter.md               ← canonical authority document (edit this)
+  capabilities.json        ← capability manifest (edit this)
+data/federation/
+  authority-descriptor-seeds.json  ← known peer URLs
+scripts/
+  render_federation_descriptor.py  ← generates .well-known/agent-federation.json
+  render_agent_card.py             ← generates .well-known/agent.json
+  export_authority_feed.py         ← builds authority feed bundle
+  discover_federation_peers.py     ← discovers peers via GitHub API (curl)
+  fetch_peer_authority.py          ← fetches + SHA-256-verifies peer feeds
+tests/
+  test_federation.py               ← 8 smoke tests
+```
+
+## Build & test
+
+```bash
+# Install dev dependencies
+pip install -e ".[dev]"
+
+# Run tests
+python -m pytest tests/ -q
+
+# Lint
+python -m ruff check .
+
+# Regenerate descriptors
+python scripts/render_federation_descriptor.py
+python scripts/render_agent_card.py
+
+# Export authority feed
+python scripts/export_authority_feed.py
+
+# Discover federation peers (requires GITHUB_TOKEN for rate limits)
+python scripts/discover_federation_peers.py
+```
+
+## Conventions
+
+- Python >= 3.11, standard library only (no runtime dependencies)
+- All scripts use `argparse` and return `int` exit codes
+- JSON output uses 2-space indent, sorted keys for canonical representation
+- SHA-256 hashing for artifact integrity verification
+- `curl` subprocess for all HTTP (no `requests` dependency)
+
+## Key patterns
+
+- Federation descriptor must include: `kind`, `version`, `repo_id`, `display_name`, `status`, `capabilities`, `layer`, `endpoints`
+- Capability manifest follows the `agent_capability_manifest` schema with `federation_interfaces.produces` / `consumes` / `protocols`
+- Discovery is dual-mode: seed-based (offline/unauthed) + GitHub topic search (`agent-federation-node`)
+- Authority feeds are versioned by git commit SHA with SHA-256 content hashing
+
+## Git workflow
+
+- Feature branches, PRs to `main`
+- Pushing to `main` triggers: descriptor sync, Agent Card sync, authority feed publish
+- Federation discovery runs weekly (Monday 06:00 UTC)
+- Bot commits use `agent-template-bot` / `bot@agent-template`
+
+## What to customize
+
+When using this template for a new node:
+1. `docs/authority/charter.md` — replace with your charter
+2. `docs/authority/capabilities.json` — declare your skills, produces/consumes
+3. Add the `agent-federation-node` GitHub topic
+4. Everything in `.well-known/` is auto-generated — don't edit directly

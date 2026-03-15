@@ -61,6 +61,11 @@ $EDITOR docs/authority/charter.md              # your charter / constitution
 $EDITOR docs/authority/capabilities.json       # your skills, produces/consumes
 ```
 
+```bash
+# 5. Verify everything works
+python scripts/quickstart.py
+```
+
 Push to `main` and the workflows will:
 
 1. Regenerate `.well-known/agent-federation.json`
