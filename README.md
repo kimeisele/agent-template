@@ -144,6 +144,27 @@ python scripts/fetch_peer_authority.py --peers .federation/peers.json
 
 The **Federation Discovery** workflow runs weekly and commits results to `.federation/peers.json`.
 
+## Nadi transport
+
+Your node ships with a `nadi_outbox.json` — a plain JSON array where you queue messages for other federation nodes. The [agent-internet](https://github.com/kimeisele/agent-internet) relay pump periodically checks out sibling repos, reads their outboxes, and delivers envelopes to the target node's inbox.
+
+```bash
+# Send a heartbeat to agent-internet
+python scripts/nadi_send.py --to agent-internet --op heartbeat
+
+# Send an inquiry to the research faculty
+python scripts/nadi_send.py --to agent-research --op inquiry \
+  --payload '{"question": "What is dark matter?"}'
+
+# List pending outbox messages
+python scripts/nadi_send.py --list
+
+# Clear after relay pickup
+python scripts/nadi_send.py --clear
+```
+
+Each message is a `DeliveryEnvelope` with `source_city_id`, `target_city_id`, `operation`, `payload`, envelope IDs, priority, and TTL. The relay hub ([steward-federation](https://github.com/kimeisele/steward-federation)) coordinates the actual transport via `FilesystemFederationTransport`.
+
 ## Capability manifest
 
 Your node declares what it produces and consumes via `docs/authority/capabilities.json`:
@@ -181,6 +202,8 @@ See [agent-research/capabilities.json](https://github.com/kimeisele/agent-resear
 | `scripts/export_authority_feed.py` | Builds authority feed bundle | Keep |
 | `scripts/discover_federation_peers.py` | Discovers peers via GitHub API | Keep |
 | `scripts/fetch_peer_authority.py` | Fetches & verifies peer authority feeds | Keep |
+| `scripts/nadi_send.py` | Queue messages to Nadi outbox for relay | Keep |
+| `nadi_outbox.json` | Nadi transport outbox (plain `[]` array) | Auto-managed |
 | `pyproject.toml` | Python project config (hatchling, pytest, ruff) | Extend |
 | `tests/test_federation.py` | Federation smoke tests (8 tests) | Extend |
 

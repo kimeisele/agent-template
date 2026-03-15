@@ -383,6 +383,12 @@ def apply_config(config: dict) -> None:
     # ── Phase 2: Federation connection ──
     print(f"\n{BOLD}── Phase 2: Connecting to Federation ──{RESET}\n")
 
+    # Nadi transport outbox
+    outbox_path = REPO_ROOT / "nadi_outbox.json"
+    if not outbox_path.exists() or outbox_path.read_text().strip() == "":
+        outbox_path.write_text("[]\n")
+    print(f"    {GREEN}✓{RESET} nadi_outbox.json (relay transport ready)")
+
     # Peer discovery
     result = subprocess.run(
         [sys.executable, "scripts/discover_federation_peers.py", "--seeds-only",
@@ -422,6 +428,7 @@ def apply_config(config: dict) -> None:
     print(f"  2. Push to GitHub:       {CYAN}git add -A && git commit -m 'Initialize federation node' && git push{RESET}")
     print(f"  3. Add the topic:        {CYAN}gh repo edit --add-topic agent-federation-node{RESET}")
     print(f"  4. Register with city:   {CYAN}(link above){RESET}")
+    print(f"  5. Send a message:       {CYAN}python scripts/nadi_send.py --to agent-internet --op heartbeat{RESET}")
     print(f"\n  Re-run: {CYAN}python scripts/setup_node.py{RESET}  |  Status: {CYAN}python scripts/setup_node.py --status{RESET}")
     print()
 
