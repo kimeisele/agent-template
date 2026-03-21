@@ -271,6 +271,50 @@ def _write_capabilities(config: dict) -> None:
     caps_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n")
 
 
+def _write_peer_json(config: dict) -> None:
+    """Write NADI peer descriptor with the configured node identity."""
+    peer_dir = REPO_ROOT / "data" / "federation"
+    peer_dir.mkdir(parents=True, exist_ok=True)
+    peer_path = peer_dir / "peer.json"
+
+    repo = config.get("github_repo", f"kimeisele/{config['repo_name']}")
+    node_id = config["repo_name"]
+    tier = TIERS[config["tier"]]
+
+    peer_data = {
+        "identity": {
+            "city_id": node_id,
+            "slug": node_id,
+            "repo": repo,
+            "public_key": "",
+        },
+        "endpoint": {
+            "city_id": node_id,
+            "transport": "filesystem",
+            "location": "data/federation",
+        },
+        "capabilities": tier["capabilities"],
+        "nadi": {
+            "outbox": "data/federation/nadi_outbox.json",
+            "inbox": "data/federation/nadi_inbox.json",
+            "reports": "data/federation/reports/",
+            "directives": "data/federation/directives/",
+        },
+    }
+
+    peer_path.write_text(json.dumps(peer_data, indent=2) + "\n")
+
+    # Ensure inbox/outbox exist
+    for fname in ("nadi_inbox.json", "nadi_outbox.json"):
+        fpath = peer_dir / fname
+        if not fpath.exists() or fpath.read_text().strip() == "":
+            fpath.write_text("[]\n")
+
+    # Ensure subdirectories exist
+    (peer_dir / "reports").mkdir(exist_ok=True)
+    (peer_dir / "directives").mkdir(exist_ok=True)
+
+
 def _regenerate(config: dict) -> None:
     repo = config.get("github_repo", f"kimeisele/{config['repo_name']}")
     layer = LAYER_MAP.get(config["tier"], "node")
@@ -383,11 +427,11 @@ def apply_config(config: dict) -> None:
     # ── Phase 2: Federation connection ──
     print(f"\n{BOLD}── Phase 2: Connecting to Federation ──{RESET}\n")
 
-    # Nadi transport outbox
-    outbox_path = REPO_ROOT / "nadi_outbox.json"
-    if not outbox_path.exists() or outbox_path.read_text().strip() == "":
-        outbox_path.write_text("[]\n")
-    print(f"    {GREEN}✓{RESET} nadi_outbox.json (relay transport ready)")
+    # NADI peer descriptor + inbox/outbox
+    _write_peer_json(config)
+    print(f"    {GREEN}✓{RESET} data/federation/peer.json (NADI identity)")
+    print(f"    {GREEN}✓{RESET} data/federation/nadi_inbox.json")
+    print(f"    {GREEN}✓{RESET} data/federation/nadi_outbox.json")
 
     # Peer discovery
     result = subprocess.run(
@@ -428,7 +472,8 @@ def apply_config(config: dict) -> None:
     print(f"  2. Push to GitHub:       {CYAN}git add -A && git commit -m 'Initialize federation node' && git push{RESET}")
     print(f"  3. Add the topic:        {CYAN}gh repo edit --add-topic agent-federation-node{RESET}")
     print(f"  4. Register with city:   {CYAN}(link above){RESET}")
-    print(f"  5. Send a message:       {CYAN}python scripts/nadi_send.py --to agent-internet --op heartbeat{RESET}")
+    print(f"  5. Start NADI daemon:    {CYAN}python scripts/nadi_daemon.py --once{RESET}")
+    print(f"  6. Send a message:       {CYAN}python scripts/nadi_send.py --to agent-internet --op heartbeat{RESET}")
     print(f"\n  Re-run: {CYAN}python scripts/setup_node.py{RESET}  |  Status: {CYAN}python scripts/setup_node.py --status{RESET}")
     print()
 

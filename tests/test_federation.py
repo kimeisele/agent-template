@@ -79,6 +79,98 @@ def test_capabilities_json_valid() -> None:
     assert "produces" in data["federation_interfaces"]
 
 
+def test_nadi_kit_import() -> None:
+    """nadi_kit.py can be imported and exposes expected API."""
+    import importlib
+    import sys
+
+    # Ensure repo root is on path
+    sys.path.insert(0, str(REPO_ROOT))
+    nadi_kit = importlib.import_module("nadi_kit")
+
+    assert hasattr(nadi_kit, "NadiNode")
+    assert hasattr(nadi_kit, "NadiMessage")
+    assert hasattr(nadi_kit, "NadiTransport")
+    assert hasattr(nadi_kit, "NadiHubRelay")
+
+
+def test_nadi_node_from_peer_json(tmp_path: Path) -> None:
+    """NadiNode can be created from a peer.json file."""
+    import sys
+
+    sys.path.insert(0, str(REPO_ROOT))
+    from nadi_kit import NadiNode
+
+    peer_data = {
+        "identity": {
+            "city_id": "test-node",
+            "slug": "test-node",
+            "repo": "kimeisele/test-node",
+            "public_key": "",
+        },
+        "endpoint": {
+            "city_id": "test-node",
+            "transport": "filesystem",
+            "location": "data/federation",
+        },
+        "capabilities": ["authority-publishing"],
+        "nadi": {
+            "outbox": "data/federation/nadi_outbox.json",
+            "inbox": "data/federation/nadi_inbox.json",
+        },
+    }
+    peer_json = tmp_path / "peer.json"
+    peer_json.write_text(json.dumps(peer_data))
+
+    node = NadiNode.from_peer_json(peer_json)
+    assert node.agent_id == "test-node"
+    assert node.repo == "kimeisele/test-node"
+    assert node.capabilities == ["authority-publishing"]
+
+
+def test_nadi_node_emit_and_receive(tmp_path: Path) -> None:
+    """NadiNode can emit messages and read them back from transport."""
+    import sys
+
+    sys.path.insert(0, str(REPO_ROOT))
+    from nadi_kit import NadiNode
+
+    peer_data = {
+        "identity": {"city_id": "emit-test"},
+        "capabilities": [],
+    }
+    peer_json = tmp_path / "peer.json"
+    peer_json.write_text(json.dumps(peer_data))
+
+    node = NadiNode.from_peer_json(peer_json)
+    node.emit("ping", {"data": "hello"}, target="steward")
+
+    outbox = node.transport.read_outbox()
+    assert len(outbox) == 1
+    assert outbox[0].operation == "ping"
+    assert outbox[0].target == "steward"
+    assert outbox[0].payload["data"] == "hello"
+
+
+def test_peer_json_exists() -> None:
+    """Template ships with a peer.json in data/federation/."""
+    peer_path = REPO_ROOT / "data" / "federation" / "peer.json"
+    assert peer_path.exists()
+    data = json.loads(peer_path.read_text())
+    assert "identity" in data
+    assert "nadi" in data
+    assert "inbox" in data["nadi"]
+    assert "outbox" in data["nadi"]
+
+
+def test_nadi_inbox_exists() -> None:
+    """Template ships with a nadi_inbox.json."""
+    inbox_path = REPO_ROOT / "data" / "federation" / "nadi_inbox.json"
+    assert inbox_path.exists()
+    data = json.loads(inbox_path.read_text())
+    assert isinstance(data, list)
+
+
 def test_well_known_descriptor_matches_schema() -> None:
     desc_path = REPO_ROOT / ".well-known" / "agent-federation.json"
     data = json.loads(desc_path.read_text())

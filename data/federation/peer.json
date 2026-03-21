@@ -1,0 +1,20 @@
+{
+  "identity": {
+    "city_id": "TEMPLATE_NODE_ID",
+    "slug": "TEMPLATE_NODE_ID",
+    "repo": "kimeisele/TEMPLATE_NODE_ID",
+    "public_key": ""
+  },
+  "endpoint": {
+    "city_id": "TEMPLATE_NODE_ID",
+    "transport": "filesystem",
+    "location": "data/federation"
+  },
+  "capabilities": [],
+  "nadi": {
+    "outbox": "data/federation/nadi_outbox.json",
+    "inbox": "data/federation/nadi_inbox.json",
+    "reports": "data/federation/reports/",
+    "directives": "data/federation/directives/"
+  }
+}
