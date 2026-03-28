@@ -3,7 +3,7 @@
     "pushNotifications": false,
     "streaming": false
   },
-  "description": "Agent Template — a federation template node",
+  "description": "Agent Template \u2014 a federation node",
   "federation": {
     "authority_feed_branch": "authority-feed",
     "descriptor_path": ".well-known/agent-federation.json",
@@ -17,8 +17,8 @@
         "authority_feed_v1"
       ]
     },
-    "node_role": "template",
-    "node_topic": "agent-federation-template",
+    "node_role": "agent_template_relay",
+    "node_topic": "agent-federation-node",
     "peer_discovery": true
   },
   "name": "Agent Template",
