@@ -80,12 +80,10 @@ def test_capabilities_json_valid() -> None:
 
 
 def test_nadi_kit_import() -> None:
-    """nadi_kit.py can be imported and exposes expected API."""
+    """nadi_kit can be imported and exposes expected API."""
     import importlib
-    import sys
 
-    # Ensure repo root is on path
-    sys.path.insert(0, str(REPO_ROOT))
+    # Import from installed nadi-kit package
     nadi_kit = importlib.import_module("nadi_kit")
 
     assert hasattr(nadi_kit, "NadiNode")
@@ -96,9 +94,6 @@ def test_nadi_kit_import() -> None:
 
 def test_nadi_node_from_peer_json(tmp_path: Path) -> None:
     """NadiNode can be created from a peer.json file."""
-    import sys
-
-    sys.path.insert(0, str(REPO_ROOT))
     from nadi_kit import NadiNode
 
     peer_data = {
@@ -130,9 +125,6 @@ def test_nadi_node_from_peer_json(tmp_path: Path) -> None:
 
 def test_nadi_node_emit_and_receive(tmp_path: Path) -> None:
     """NadiNode can emit messages and read them back from transport."""
-    import sys
-
-    sys.path.insert(0, str(REPO_ROOT))
     from nadi_kit import NadiNode
 
     peer_data = {

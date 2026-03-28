@@ -7,6 +7,9 @@ name = "agent-template"
 version = "0.1.0"
 description = "Federation node template for the agent-internet"
 requires-python = ">=3.11"
+dependencies = [
+    "nadi-kit @ git+https://github.com/kimeisele/steward-federation.git#egg=nadi-kit",
+]
 
 [project.optional-dependencies]
 dev = [
