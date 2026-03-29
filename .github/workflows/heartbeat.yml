@@ -26,6 +26,11 @@ jobs:
           python nadi_kit.py sync
           echo "Heartbeat + sync complete"
 
+      - name: Write heartbeat payload
+        run: |
+          mkdir -p data/federation
+          echo '[{"agent_id":"agent-template","operation":"heartbeat","source":"agent-template","status":"alive","role":"template"}]' > data/federation/nadi_outbox.json
+
       - name: Commit federation state
         run: |
           git config user.name "federation-bot"
@@ -37,3 +42,41 @@ jobs:
             git commit -m "chore: federation heartbeat state"
             git push || echo "Push failed (non-fatal)"
           fi
+
+      - name: Relay outbox to steward-federation hub
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.FEDERATION_PAT || secrets.GITHUB_TOKEN }}
+        run: |
+          mkdir -p data/federation
+          OUTBOX="data/federation/nadi_outbox.json"
+
+          if [ ! -f "$OUTBOX" ]; then
+            echo "[]" > "$OUTBOX"
+          fi
+
+          if [ "$(cat "$OUTBOX" | tr -d '[:space:]')" = "[]" ]; then
+            echo "Outbox empty, skipping relay"
+            exit 0
+          fi
+
+          git clone --depth=1 https://x-access-token:${GH_TOKEN}@github.com/kimeisele/steward-federation.git /tmp/hub
+
+          mkdir -p /tmp/hub/nadi
+
+          cp "$OUTBOX" /tmp/hub/nadi/agent-template_to_steward.json
+
+          cd /tmp/hub
+          git config user.name "federation-bot"
+          git config user.email "bot@federation"
+          git add nadi/agent-template_to_steward.json
+          git diff --cached --quiet || git commit -m "relay: agent-template outbox → steward (heartbeat #${{ github.run_number }})"
+          for attempt in 1 2 3; do
+            git push && break
+            echo "Push attempt $attempt failed, rebasing..."
+            git pull --rebase origin main || true
+            sleep $((RANDOM % 10 + 2))
+          done
+
+          echo "[]" > "$OUTBOX"
+          echo "Outbox relayed and cleared"
