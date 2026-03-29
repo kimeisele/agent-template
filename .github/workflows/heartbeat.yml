@@ -33,12 +33,24 @@ jobs:
           python -m pip install --upgrade pip setuptools wheel
           pip install requests
 
-      - name: Run heartbeat
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Write heartbeat payload
         run: |
           mkdir -p data/federation
-          echo "Heartbeat pulse from agent-template"
+          python3 << 'PYTHON_EOF'
+          import json
+          from datetime import datetime
+          
+          heartbeat = {
+              "agent_id": "agent-template",
+              "op": "heartbeat",
+              "ts": datetime.utcnow().isoformat() + "Z",
+              "status": "alive",
+              "role": "scaffolding"
+          }
+          
+          with open("data/federation/nadi_outbox.json", "w") as f:
+              json.dump([heartbeat], f, indent=2)
+          PYTHON_EOF
 
       - name: Commit federation state
         if: always()
