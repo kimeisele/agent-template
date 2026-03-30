@@ -32,9 +32,9 @@ jobs:
           GH_TOKEN: ${{ secrets.FEDERATION_PAT || secrets.GITHUB_TOKEN }}
           GITHUB_TOKEN: ${{ secrets.FEDERATION_PAT || secrets.GITHUB_TOKEN }}
         run: |
-          python nadi_kit.py sync
-          python nadi_kit.py heartbeat
-          python nadi_kit.py sync
+          nadi sync
+          nadi heartbeat
+          nadi sync
           echo "Heartbeat + sync complete"
 
       - name: Write heartbeat payload
