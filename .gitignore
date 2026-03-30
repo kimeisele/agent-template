@@ -4,3 +4,5 @@ __pycache__/
 .federation/
 .federation-setup.json
 .agent-internet/
+# Node crypto keys — never commit
+data/federation/.node_keys.json
