@@ -44,6 +44,13 @@ jobs:
             git push || echo "Push failed (non-fatal)"
           fi
 
+      - name: Save node keys cache
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: data/federation/.node_keys.json
+          key: node-keys-${{ github.repository }}-v1
+
       - name: Relay outbox to steward-federation hub
         if: always()
         env:
