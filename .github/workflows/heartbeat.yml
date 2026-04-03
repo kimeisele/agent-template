@@ -1,5 +1,3 @@
-<<<<<<< HEAD
-=======
 name: Node Heartbeat
 
 on:
@@ -107,4 +105,3 @@ jobs:
         run: |
           nadi sync
           echo "Final sync complete"
->>>>>>> c4bc2ee (fix: restore heartbeat.yml + add debug logging for node_keys.json injection)
