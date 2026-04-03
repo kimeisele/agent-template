@@ -20,8 +20,9 @@ jobs:
         run: |
           mkdir -p data/federation
           printf '%s' "${{ secrets.NODE_PRIVATE_KEY }}" > data/federation/.node_keys.json
-          echo "DEBUG: .node_keys.json size=$(wc -c < data/federation/.node_keys.json) bytes"
-          echo "DEBUG: first 100 chars: $(head -c 100 data/federation/.node_keys.json)"
+          echo "DEBUG: Full .node_keys.json content:"
+          cat data/federation/.node_keys.json
+          python3 -c "import json; d=json.load(open('data/federation/.node_keys.json')); print(f'\nDEBUG: Parsed node_id={d.get(\"node_id\",\"ERROR\")}')" 2>&1 || echo "DEBUG: JSON PARSE FAILED"
 
       - name: Install dependencies
         env:
