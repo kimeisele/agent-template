@@ -16,12 +16,21 @@ jobs:
         with:
           python-version: '3.11'
 
+      - name: Check NODE_PRIVATE_KEY secret
+        run: |
+          echo "DEBUG: SECRET length = ${#NODE_PRIVATE_KEY} chars"
+          echo "DEBUG: SECRET first 50 chars: $(echo "$NODE_PRIVATE_KEY" | head -c 50)"
+        env:
+          NODE_PRIVATE_KEY: ${{ secrets.NODE_PRIVATE_KEY }}
+
       - name: Inject node identity from secret
         run: |
           mkdir -p data/federation
-          printf '%s' "${{ secrets.NODE_PRIVATE_KEY }}" > data/federation/.node_keys.json
+          printf '%s' "$NODE_PRIVATE_KEY" > data/federation/.node_keys.json
           echo "DEBUG: File size: $(wc -c < data/federation/.node_keys.json) bytes"
-          python3 -c "import json; d=json.load(open('data/federation/.node_keys.json')); print(f'DEBUG: SUCCESS node_id={d.get(\"node_id\")}')" 2>&1 || echo "DEBUG: JSON PARSE FAILED - file may be malformed"
+          python3 -c "import json; d=json.load(open('data/federation/.node_keys.json')); print(f'DEBUG: SUCCESS node_id={d.get(\"node_id\")}')" 2>&1 || echo "DEBUG: JSON PARSE FAILED"
+        env:
+          NODE_PRIVATE_KEY: ${{ secrets.NODE_PRIVATE_KEY }}
 
       - name: Install dependencies
         env:
