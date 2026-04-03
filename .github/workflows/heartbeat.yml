@@ -21,19 +21,7 @@ jobs:
           mkdir -p data/federation
           printf '%s' "${{ secrets.NODE_PRIVATE_KEY }}" > data/federation/.node_keys.json
           echo "DEBUG: File size: $(wc -c < data/federation/.node_keys.json) bytes"
-          echo "DEBUG: First 10 chars (hex): $(head -c 10 data/federation/.node_keys.json | od -An -tx1)"
-          echo "DEBUG: Trying JSON parse attempt 1 (json.load)..."
-          python3 << 'PYEOF'
-import json, sys
-try:
-    with open('data/federation/.node_keys.json') as f:
-        content = f.read()
-        print(f"File content repr: {repr(content[:120])}")
-        d = json.loads(content)
-        print(f"SUCCESS: node_id={d.get('node_id')}")
-except Exception as e:
-    print(f"FAILED: {type(e).__name__}: {e}")
-PYEOF
+          python3 -c "import json; d=json.load(open('data/federation/.node_keys.json')); print(f'DEBUG: SUCCESS node_id={d.get(\"node_id\")}')" 2>&1 || echo "DEBUG: JSON PARSE FAILED - file may be malformed"
 
       - name: Install dependencies
         env:
