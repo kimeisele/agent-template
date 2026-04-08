@@ -3,36 +3,89 @@ name: Node Heartbeat
 on:
   workflow_dispatch:
   schedule:
-    - cron: "*/15 * * * *"  # Every 15 minutes
+    - cron: '*/15 * * * *'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: heartbeat
+  cancel-in-progress: false
 
 jobs:
   heartbeat:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
+
     steps:
-      - uses: actions/checkout@v4
-      
-      - name: Set up Python
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.FEDERATION_PAT || secrets.GITHUB_TOKEN }}
+
+      - name: Setup Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
-      
+          python-version: '3.11'
+
       - name: Inject node identity from secret
         run: |
           mkdir -p data/federation
-          printf '%s' "$NODE_PRIVATE_KEY" > data/federation/.node_keys.json
-          echo "DEBUG: File size: $(wc -c < data/federation/.node_keys.json) bytes"
-          python3 -c "import json; d=json.load(open('data/federation/.node_keys.json')); print(f'DEBUG: SUCCESS node_id={d.get("node_id")}')" 2>&1 || echo "DEBUG: JSON PARSE FAILED"
+          printf '%s' "${{ secrets.NODE_PRIVATE_KEY }}" > data/federation/.node_keys.json
+          echo "File size: $(wc -c < data/federation/.node_keys.json) bytes"
+          python3 -c "import json; d=json.load(open('data/federation/.node_keys.json')); print(f'node_id={d.get(chr(110)+chr(111)+chr(100)+chr(101)+chr(95)+chr(105)+chr(100))}')" 2>&1 || echo "PARSE FAILED"
+
+      - name: Install nadi-kit
         env:
-          NODE_PRIVATE_KEY: ${{ secrets.NODE_PRIVATE_KEY }}
-      
-      - name: Install dependencies
+          GH_TOKEN: ${{ secrets.FEDERATION_PAT || secrets.GITHUB_TOKEN }}
         run: |
-          python -m pip install -e .
-          python -m pip install --upgrade "git+https://${GH_TOKEN}@github.com/kimeisele/steward-federation.git#egg=nadi-kit"
+          python -m pip install --upgrade pip
+          pip install --upgrade "git+https://${GH_TOKEN}@github.com/kimeisele/steward-federation.git#egg=nadi-kit"
+
+      - name: Run NADI heartbeat cycle
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      
-      - name: Run heartbeat
-        run: python -m city.scripts.nadi_heartbeat
+          GH_TOKEN: ${{ secrets.FEDERATION_PAT || secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.FEDERATION_PAT || secrets.GITHUB_TOKEN }}
+        run: |
+          nadi --peer-json data/federation/peer.json sync
+          nadi --peer-json data/federation/peer.json heartbeat --health 1.0
+          nadi --peer-json data/federation/peer.json sync
+
+      - name: Commit federation state
+        if: always()
+        run: |
+          git config user.name "federation-bot"
+          git config user.email "bot@federation"
+          git add data/federation/ || true
+          git diff --cached --quiet ||             git commit -m "chore: heartbeat state"
+          git push || true
+
+      - name: Relay outbox to steward-federation hub
+        if: always()
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.FEDERATION_PAT || secrets.GITHUB_TOKEN }}
+        run: |
+          OUTBOX="data/federation/nadi_outbox.json"
+          if [ ! -f "$OUTBOX" ] || [ "$(cat "$OUTBOX" | tr -d "[:space:]")" = "[]" ]; then
+            echo "Outbox empty, skipping relay"
+            exit 0
+          fi
+          git clone --depth=1 https://x-access-token:${GH_TOKEN}@github.com/kimeisele/steward-federation.git /tmp/hub
+          mkdir -p /tmp/hub/nadi
+          cp "$OUTBOX" /tmp/hub/nadi/agent-template_to_steward.json
+          cd /tmp/hub
+          git config user.name "federation-bot"
+          git config user.email "bot@federation"
+          git add nadi/agent-template_to_steward.json
+          git diff --cached --quiet || git commit -m "relay: agent-template outbox -> steward (#${{ github.run_number }})"
+          max_retries=10
+          count=0
+          until git push origin main; do
+            count=$((count+1))
+            if [ $count -gt $max_retries ]; then echo "Push failed after $max_retries"; exit 1; fi
+            backoff=$(( (RANDOM % 15) + 2 ))
+            sleep $backoff
+            git pull --rebase origin main
+          done
+          echo "[]" > "$OUTBOX"
+          echo "Outbox relayed and cleared"
