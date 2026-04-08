@@ -29,11 +29,17 @@ jobs:
           python-version: '3.11'
 
       - name: Inject node identity from secret
+        env:
+          NODE_PRIVATE_KEY: ${{ secrets.NODE_PRIVATE_KEY }}
         run: |
           mkdir -p data/federation
-          printf '%s' "${{ secrets.NODE_PRIVATE_KEY }}" > data/federation/.node_keys.json
-          echo "File size: $(wc -c < data/federation/.node_keys.json) bytes"
-          python3 -c "import json; d=json.load(open('data/federation/.node_keys.json')); print(f'node_id={d.get(chr(110)+chr(111)+chr(100)+chr(101)+chr(95)+chr(105)+chr(100))}')" 2>&1 || echo "PARSE FAILED"
+          python3 -c "
+import os, json
+secret = os.environ['NODE_PRIVATE_KEY']
+data = json.loads(secret)
+json.dump(data, open('data/federation/.node_keys.json', 'w'))
+print(f'node_id={data["node_id"]}')
+"
 
       - name: Install nadi-kit
         env:
@@ -57,7 +63,7 @@ jobs:
           git config user.name "federation-bot"
           git config user.email "bot@federation"
           git add data/federation/ || true
-          git diff --cached --quiet ||             git commit -m "chore: heartbeat state"
+          git diff --cached --quiet || git commit -m "chore: heartbeat state"
           git push || true
 
       - name: Relay outbox to steward-federation hub
@@ -82,7 +88,7 @@ jobs:
           count=0
           until git push origin main; do
             count=$((count+1))
-            if [ $count -gt $max_retries ]; then echo "Push failed after $max_retries"; exit 1; fi
+            if [ $count -gt $max_retries ]; then echo "Push failed"; exit 1; fi
             backoff=$(( (RANDOM % 15) + 2 ))
             sleep $backoff
             git pull --rebase origin main
