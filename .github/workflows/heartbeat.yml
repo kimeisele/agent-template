@@ -33,13 +33,7 @@ jobs:
           NODE_PRIVATE_KEY: ${{ secrets.NODE_PRIVATE_KEY }}
         run: |
           mkdir -p data/federation
-          python3 << 'INJECT'
-import os, json
-secret = os.environ['NODE_PRIVATE_KEY']
-data = json.loads(secret)
-json.dump(data, open('data/federation/.node_keys.json', 'w'))
-print(f"node_id={data['node_id']}")
-INJECT
+          python3 -c "import os,json; d=json.loads(os.environ['NODE_PRIVATE_KEY']); json.dump(d,open('data/federation/.node_keys.json','w')); print('node_id='+d['node_id'])"
 
       - name: Install nadi-kit
         env:
@@ -72,7 +66,7 @@ INJECT
           GH_TOKEN: ${{ secrets.FEDERATION_PAT || secrets.GITHUB_TOKEN }}
         run: |
           OUTBOX="data/federation/nadi_outbox.json"
-          if [ ! -f "$OUTBOX" ] || [ "$(cat "$OUTBOX" | tr -d "[:space:]")" = "[]" ]; then
+          if [ ! -f "$OUTBOX" ] || [ "$(cat "$OUTBOX" | tr -d '[:space:]')" = "[]" ]; then
             echo "Outbox empty, skipping relay"
             exit 0
           fi
