@@ -1,0 +1,38 @@
+name: Node Heartbeat
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "*/15 * * * *"  # Every 15 minutes
+
+jobs:
+  heartbeat:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      
+      - name: Inject node identity from secret
+        run: |
+          mkdir -p data/federation
+          printf '%s' "$NODE_PRIVATE_KEY" > data/federation/.node_keys.json
+          echo "DEBUG: File size: $(wc -c < data/federation/.node_keys.json) bytes"
+          python3 -c "import json; d=json.load(open('data/federation/.node_keys.json')); print(f'DEBUG: SUCCESS node_id={d.get("node_id")}')" 2>&1 || echo "DEBUG: JSON PARSE FAILED"
+        env:
+          NODE_PRIVATE_KEY: ${{ secrets.NODE_PRIVATE_KEY }}
+      
+      - name: Install dependencies
+        run: |
+          python -m pip install -e .
+          python -m pip install --upgrade "git+https://${GH_TOKEN}@github.com/kimeisele/steward-federation.git#egg=nadi-kit"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      
+      - name: Run heartbeat
+        run: python -m city.scripts.nadi_heartbeat
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
