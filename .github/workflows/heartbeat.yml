@@ -33,6 +33,7 @@ jobs:
 
       - name: Download nadi_kit
         env:
+          NODE_PRIVATE_KEY: ${{ secrets.NODE_PRIVATE_KEY }}
           GH_TOKEN: ${{ secrets.FEDERATION_PAT || secrets.GITHUB_TOKEN }}
         run: |
           curl -sL -H "Authorization: token ${GH_TOKEN}" \
@@ -40,15 +41,9 @@ jobs:
             -o nadi_kit.py
           python3 -c "import sys; sys.path.insert(0, '.'); import nadi_kit; print('nadi_kit loaded')"
 
-      - name: Inject node identity from secret
-        env:
-          NODE_PRIVATE_KEY: ${{ secrets.NODE_PRIVATE_KEY }}
-        run: |
-          mkdir -p data/federation
-          python3 -c "import os,json; d=json.loads(os.environ['NODE_PRIVATE_KEY']); json.dump(d,open('data/federation/.node_keys.json','w')); print('node_id='+d['node_id'])"
-
       - name: Run NADI heartbeat cycle
         env:
+          NODE_PRIVATE_KEY: ${{ secrets.NODE_PRIVATE_KEY }}
           GH_TOKEN: ${{ secrets.FEDERATION_PAT || secrets.GITHUB_TOKEN }}
           GITHUB_TOKEN: ${{ secrets.FEDERATION_PAT || secrets.GITHUB_TOKEN }}
         run: |
