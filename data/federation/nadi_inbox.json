@@ -6,7 +6,7 @@
     "payload": {
       "agent_id": "agent-research",
       "health": 1.0,
-      "timestamp": 1783969632.6120486,
+      "timestamp": 1783974197.0666914,
       "capabilities": [
         "research",
         "federation_relay"
@@ -16,40 +16,12 @@
       "node_id": "ag_c3c5d9aed6d3dc6e",
       "public_key": "695a4f70c734babe9fb2fd985726e68a17a9a4d3f328a494dade54bbffacb98c"
     },
-    "timestamp": 1783969632.8322163,
+    "timestamp": 1783974197.352781,
     "priority": 1,
     "correlation_id": "",
     "ttl_s": 900.0,
-    "id": "80e8f6bb-8bfb-4944-8c67-cd38c0cebc33",
-    "payload_hash": "da2f1c0b22b58b48fc49186facc19c5ca21dab0419a1de648c61340436ff3296",
-    "signature": "0IqWZU5jj9nP9zqHpE01qIXNM0m3riA45qmgvw979WMxlfgYmUxfXnixR3t/DZKGFoThv+S8+8Oh4yOuJTJzDg=="
-  },
-  {
-    "source": "ag_b670dc6cbcb705fe",
-    "target": "agent-template",
-    "operation": "heartbeat",
-    "payload": {
-      "agent_id": "agent-city",
-      "health": 1.0,
-      "timestamp": 1783970076.692808,
-      "capabilities": [
-        "multi_agent_runtime",
-        "city_governance",
-        "federation_relay",
-        "wiki_publishing",
-        "heartbeat_observer"
-      ],
-      "repo": "kimeisele/agent-city",
-      "version": "0.1.0",
-      "node_id": "ag_b670dc6cbcb705fe",
-      "public_key": "170447069c6c3ce6bd244fe1e8b38c44b5c4ca1d66fca3a2f79d86f10e41990d"
-    },
-    "timestamp": 1783970077.0826664,
-    "priority": 1,
-    "correlation_id": "",
-    "ttl_s": 900.0,
-    "id": "c45f073a-b6c8-4a8e-b251-5033545a57f3",
-    "payload_hash": "f314c9087f4d752fd35594cf0abd5afa4f09bd08e3f9933c90e7c5691f3832eb",
-    "signature": "wrWGVxa4eu7vAd9/hlYNSILHqMqN7zpnPK4Xk+Wa9nLMW9o8bqYatqorfcU469v/WxdFkwN82DBHHoyvJW80AA=="
+    "id": "33a1871a-68f7-473a-8334-7249bf5c4c96",
+    "payload_hash": "521adfacde47f6eb8cc75481d860011e0b2708434f86362f394ca03e2f517fdd",
+    "signature": "aM+VDVsqUaUfZGnIgrDjM9dxlM+bvBRaY3qJh++zVcSShdrZEeZuMFIVzvffz+DA87hXmHh2dAHkeM/CibG0BQ=="
   }
 ]
