@@ -1,1 +1,27 @@
-[]
+[
+  {
+    "source": "ag_c3c5d9aed6d3dc6e",
+    "target": "agent-template",
+    "operation": "heartbeat",
+    "payload": {
+      "agent_id": "agent-research",
+      "health": 1.0,
+      "timestamp": 1783947736.512157,
+      "capabilities": [
+        "research",
+        "federation_relay"
+      ],
+      "repo": "kimeisele/agent-research",
+      "version": "0.1.0",
+      "node_id": "ag_c3c5d9aed6d3dc6e",
+      "public_key": "695a4f70c734babe9fb2fd985726e68a17a9a4d3f328a494dade54bbffacb98c"
+    },
+    "timestamp": 1783947740.183834,
+    "priority": 1,
+    "correlation_id": "",
+    "ttl_s": 900.0,
+    "id": "fd830016-6871-46e9-98a7-17426d829513",
+    "payload_hash": "23cd81caeff3c3e879d9824614178db5c94ce08e99c90c0c1ab9a0abfb5f81f6",
+    "signature": "CF2JlRgeSoenAIr/lqnwFRNeE4ZECOflt4hlHVD7gHnWNmD8zPfyywmiXChGfq8YFyF2Ko/wVhnDKu9jQb6uBQ=="
+  }
+]
