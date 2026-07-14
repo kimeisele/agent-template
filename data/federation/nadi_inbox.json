@@ -6,7 +6,7 @@
     "payload": {
       "agent_id": "agent-research",
       "health": 1.0,
-      "timestamp": 1783985284.9668243,
+      "timestamp": 1783990529.2655175,
       "capabilities": [
         "research",
         "federation_relay"
@@ -16,12 +16,12 @@
       "node_id": "ag_c3c5d9aed6d3dc6e",
       "public_key": "695a4f70c734babe9fb2fd985726e68a17a9a4d3f328a494dade54bbffacb98c"
     },
-    "timestamp": 1783985285.1699955,
+    "timestamp": 1783990529.6371865,
     "priority": 1,
     "correlation_id": "",
     "ttl_s": 900.0,
-    "id": "abf65549-e772-4047-991e-123ead79870e",
-    "payload_hash": "e698db334804d5c6c6a2c29b1778d5d667c6c0074c3cd6a23daeb442c676b360",
-    "signature": "Qks/uOnugasmGHu886kN5fnfNnMmCSBk5ZDDVVx2ZsNQaA/SAkpTgkgTmLCXc6K4UobtFuCsyjWxi5OR/MjLDw=="
+    "id": "8a0a72ce-24bd-424c-b606-35a521e966c0",
+    "payload_hash": "85762173c6c2bd83615573f15bb27079ce71ed33cacfd171ace15644f0f6eda5",
+    "signature": "/jkYoqt7GbIpnInAtB0YTXL02zEnVgJB4OYjnGLX9JrSgsMHKTOlTaD8U5XB3eONtsgp8KCML53SAmxALFfHBA=="
   }
 ]
