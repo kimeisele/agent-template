@@ -1,55 +1,30 @@
 [
   {
-    "source": "ag_8dacb2d32e5f6efe",
+    "source": "ag_b670dc6cbcb705fe",
     "target": "agent-template",
     "operation": "heartbeat",
     "payload": {
-      "agent_id": "agent-world",
+      "agent_id": "agent-city",
       "health": 1.0,
-      "timestamp": 1784110806.6698513,
+      "timestamp": 1784116228.687202,
       "capabilities": [
-        "world-governance",
-        "federation-registry",
-        "role-assignment",
-        "authority-projection"
+        "multi_agent_runtime",
+        "city_governance",
+        "federation_relay",
+        "wiki_publishing",
+        "heartbeat_observer"
       ],
-      "repo": "kimeisele/agent-world",
+      "repo": "kimeisele/agent-city",
       "version": "0.1.0",
-      "node_id": "ag_8dacb2d32e5f6efe",
-      "public_key": "b5bd836276524e41afe4d99da0880ccdc02d91af481bf7ea4791b8cf2e1c9cb4"
+      "node_id": "ag_b670dc6cbcb705fe",
+      "public_key": "170447069c6c3ce6bd244fe1e8b38c44b5c4ca1d66fca3a2f79d86f10e41990d"
     },
-    "timestamp": 1784110807.082347,
+    "timestamp": 1784116228.985975,
     "priority": 1,
     "correlation_id": "",
     "ttl_s": 900.0,
-    "id": "776456e3-d0a7-403c-94f5-b4fd2737aeba",
-    "payload_hash": "1af354b54eabfd45e39c4183597c82de1ba82308a9dc12abd4dba3678b0e9ce9",
-    "signature": "2e6HlImC/v7q2VpsWLQJc8oJPkUcax07E8JlaMXRUoUQPF9s90jgt1w6B9AI8D8bqUIqy9aJB1PfRhxusUJcDg=="
-  },
-  {
-    "source": "ag_9272c311628b5f40",
-    "target": "agent-template",
-    "operation": "heartbeat",
-    "payload": {
-      "agent_id": "steward-federation",
-      "health": 1.0,
-      "timestamp": 1784110902.1405046,
-      "capabilities": [
-        "nadi_hub",
-        "mailbox_routing",
-        "federation_relay"
-      ],
-      "repo": "kimeisele/steward-federation",
-      "version": "0.1.0",
-      "node_id": "ag_9272c311628b5f40",
-      "public_key": "7db713da1b3f250a83fc2ebe668914fbcfc2ab59126093f7ff8e8f61357591be"
-    },
-    "timestamp": 1784110902.4388115,
-    "priority": 1,
-    "correlation_id": "",
-    "ttl_s": 900.0,
-    "id": "fedec9b9-8f3f-43a3-bf98-564b387db871",
-    "payload_hash": "4f359da47c1e60c0a63c22d9fef878f984e6e9ad9ee46f164769b7b5983bec21",
-    "signature": "TGZ/8OtYNc1cE/Nfh6SoLJ0Hkc2lp9DUvJG5s80NzgYyqhLeSn9LEYXFTbkCzsIEH3cUpz6+4ifdnZkRHctlCQ=="
+    "id": "42315183-a431-4a62-9175-e596bd178d58",
+    "payload_hash": "773b7e5e5942fae7242fea153d8b79214438ac41ef2dc38841616a38631b7f07",
+    "signature": "HjxTdeksiIcrBCAZOPSSazm/6mYvHyXmzyQoT9Aren3O8PKvzKr133I2YuMEcrNeoFjeQALzYqWLYWTUbm6uCg=="
   }
 ]
