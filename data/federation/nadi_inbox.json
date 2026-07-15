@@ -6,7 +6,7 @@
     "payload": {
       "agent_id": "agent-city",
       "health": 1.0,
-      "timestamp": 1784141843.8412838,
+      "timestamp": 1784145992.2715955,
       "capabilities": [
         "multi_agent_runtime",
         "city_governance",
@@ -19,12 +19,39 @@
       "node_id": "ag_b670dc6cbcb705fe",
       "public_key": "170447069c6c3ce6bd244fe1e8b38c44b5c4ca1d66fca3a2f79d86f10e41990d"
     },
-    "timestamp": 1784141844.227822,
+    "timestamp": 1784145992.4746923,
     "priority": 1,
     "correlation_id": "",
     "ttl_s": 900.0,
-    "id": "8d793f75-1926-43d1-8d51-ceeb878f833a",
-    "payload_hash": "a8717697ceeb85908bdaf68923072e820e07f4cdddf74caac3d7f98dd8721c12",
-    "signature": "bFqYpc9q/Gdrt3pMmwQFV8L03plg1wvmWqyRNuRrfWJ8btDGlCCsHhGDHHAIkoZ40TyOMPJKbL235QvzZZl6CA=="
+    "id": "52b7a279-ecb9-461f-81c5-3a458f5c0a9f",
+    "payload_hash": "8a21d89b89114cac244bcbb90e9361d535154fe991eb83b2e3116cacd2444a17",
+    "signature": "GLKdooPlIs8Zd47cYaf70DS3bwWLeWpmU5CmGYnZrZcrvu8VKASDOplF9jIW0SqAxK+ULTm3tdVhSHwKRsECAA=="
+  },
+  {
+    "source": "ag_99e616186d438ecd",
+    "target": "agent-template",
+    "operation": "heartbeat",
+    "payload": {
+      "agent_id": "agent-world",
+      "health": 1.0,
+      "timestamp": 1784146078.0862432,
+      "capabilities": [
+        "world-governance",
+        "federation-registry",
+        "role-assignment",
+        "authority-projection"
+      ],
+      "repo": "kimeisele/agent-world",
+      "version": "0.1.0",
+      "node_id": "ag_99e616186d438ecd",
+      "public_key": "3cc38ebec2cc863de3bb532305472dc238d22c1cde4c80e3b030187ea09e4c64"
+    },
+    "timestamp": 1784146078.2184136,
+    "priority": 1,
+    "correlation_id": "",
+    "ttl_s": 900.0,
+    "id": "e487774e-f102-444a-8c15-4a06fa7749bf",
+    "payload_hash": "65a8abbc54845f25d2b7608d9c86735c785410c404c9b7eb6644d0bb69316d5a",
+    "signature": "jEpTWNJKse5zRV99y6S5bMOOCEv1irZHryKrdo78l/EMwWZUAYu3X1qserQ3XvTC4HqWK2yIpdSl0Z7VF4csCw=="
   }
 ]
