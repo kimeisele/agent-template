@@ -6,7 +6,7 @@
     "payload": {
       "agent_id": "agent-city",
       "health": 1.0,
-      "timestamp": 1784327184.2638462,
+      "timestamp": 1784330197.2487159,
       "capabilities": [
         "multi_agent_runtime",
         "city_governance",
@@ -19,38 +19,13 @@
       "node_id": "ag_b670dc6cbcb705fe",
       "public_key": "170447069c6c3ce6bd244fe1e8b38c44b5c4ca1d66fca3a2f79d86f10e41990d"
     },
-    "timestamp": 1784327184.652035,
+    "timestamp": 1784330197.536343,
     "priority": 1,
     "correlation_id": "",
     "ttl_s": 900.0,
-    "id": "952f1e6b-f735-4f80-b6f6-de84357004aa",
-    "payload_hash": "e19e86cc9284bf35ee1b41804a6422468a9f3d54a2b4d90ea58cd6fafae1923e",
-    "signature": "D46NY15+oXVT5+yrhHMyWSrpvsQBmKSCh+toqg3Kf7rjMy7OvjatVijCgoCYL/BCk1s8kp2Zxqfd7GdK1YN4Cg=="
-  },
-  {
-    "source": "ag_c3c5d9aed6d3dc6e",
-    "target": "agent-template",
-    "operation": "heartbeat",
-    "payload": {
-      "agent_id": "agent-research",
-      "health": 1.0,
-      "timestamp": 1784327002.2884936,
-      "capabilities": [
-        "research",
-        "federation_relay"
-      ],
-      "repo": "kimeisele/agent-research",
-      "version": "0.1.0",
-      "node_id": "ag_c3c5d9aed6d3dc6e",
-      "public_key": "695a4f70c734babe9fb2fd985726e68a17a9a4d3f328a494dade54bbffacb98c"
-    },
-    "timestamp": 1784327002.517116,
-    "priority": 1,
-    "correlation_id": "",
-    "ttl_s": 900.0,
-    "id": "9a9580cc-4299-4ed2-9165-0a647b4f9a96",
-    "payload_hash": "547918a520f764ce80871ecd985a238d248a589e2ad4ac0fbf952276eaa07452",
-    "signature": "qG3mAgOXCTOBrzJLKLQDGicRZfjhjNCpWyns7IxlkHgOSCwOV72uZeKvH0yjkcUmRH6wphmUi65PUUzQeP7+Dg=="
+    "id": "fb283ba5-4a37-4d01-a2e4-4f65e099dda9",
+    "payload_hash": "f2fea7830bf44b746d35ed8b6cbf17dc13e158deeba6c10b8c100c1f9b674821",
+    "signature": "dnoVyRuGb/szh8rlVQrS3Fg5YlMxPJdiRAOi0iYrlKXv+B/bmk5JfcxXiO4GAF6VMDGOGqv04ZyeDoCKmDgcBA=="
   },
   {
     "source": "ag_99e616186d438ecd",
@@ -59,7 +34,7 @@
     "payload": {
       "agent_id": "agent-world",
       "health": 1.0,
-      "timestamp": 1784326865.3483505,
+      "timestamp": 1784330622.6214159,
       "capabilities": [
         "world-governance",
         "federation-registry",
@@ -71,38 +46,12 @@
       "node_id": "ag_99e616186d438ecd",
       "public_key": "3cc38ebec2cc863de3bb532305472dc238d22c1cde4c80e3b030187ea09e4c64"
     },
-    "timestamp": 1784326865.6491246,
+    "timestamp": 1784330623.028923,
     "priority": 1,
     "correlation_id": "",
     "ttl_s": 900.0,
-    "id": "f7a0ebd9-62dd-4ff7-b436-1262857adf3c",
-    "payload_hash": "e70dd3e6adb27c7cb54126def5eb0fc8526219f6d7e231c6f6a45d752726486b",
-    "signature": "5ZNwkAjCWlyETIDo1ihTTsuyr+uVyH8j7ygZAji3g631aLb/f6K0ICDR+9l1JrQ7qRkMThzehiGQksvZrHiUCQ=="
-  },
-  {
-    "source": "ag_9272c311628b5f40",
-    "target": "agent-template",
-    "operation": "heartbeat",
-    "payload": {
-      "agent_id": "steward-federation",
-      "health": 1.0,
-      "timestamp": 1784327046.2216544,
-      "capabilities": [
-        "nadi_hub",
-        "mailbox_routing",
-        "federation_relay"
-      ],
-      "repo": "kimeisele/steward-federation",
-      "version": "0.1.0",
-      "node_id": "ag_9272c311628b5f40",
-      "public_key": "7db713da1b3f250a83fc2ebe668914fbcfc2ab59126093f7ff8e8f61357591be"
-    },
-    "timestamp": 1784327046.6170695,
-    "priority": 1,
-    "correlation_id": "",
-    "ttl_s": 900.0,
-    "id": "0097be93-0309-4f5b-8de7-1c10d549561b",
-    "payload_hash": "437688fd18d3fd4612927443a71a270b9ab7c196eb1a36de5515ce2bf5647164",
-    "signature": "6W6E6MX4+Yc75fWgYVB3gbJfdgDlLL4eU+jH2onX1XlkKSVCxypYpjTzKakV68pX+j2oJnCGcaO9y0WVW7lTBQ=="
+    "id": "4091b6d5-9995-4ab5-b602-8b5aecdc4695",
+    "payload_hash": "6b0473e1ba9012f2d600b8030bd0d71e50df395132a7207f46fddf0414807b0d",
+    "signature": "RRWQttKdDaHV9EbVILqBeoUWpgHpnzFBL5BB1PC2ti22LeKn8F/cZEYW+hfYDZB0fnpZs5wy2Iq1keNmCH0qAA=="
   }
 ]
