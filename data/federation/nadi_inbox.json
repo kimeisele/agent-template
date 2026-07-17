@@ -1,28 +1,30 @@
 [
   {
-    "source": "ag_9272c311628b5f40",
+    "source": "ag_b670dc6cbcb705fe",
     "target": "agent-template",
     "operation": "heartbeat",
     "payload": {
-      "agent_id": "steward-federation",
+      "agent_id": "agent-city",
       "health": 1.0,
-      "timestamp": 1784288634.7422605,
+      "timestamp": 1784293766.121753,
       "capabilities": [
-        "nadi_hub",
-        "mailbox_routing",
-        "federation_relay"
+        "multi_agent_runtime",
+        "city_governance",
+        "federation_relay",
+        "wiki_publishing",
+        "heartbeat_observer"
       ],
-      "repo": "kimeisele/steward-federation",
+      "repo": "kimeisele/agent-city",
       "version": "0.1.0",
-      "node_id": "ag_9272c311628b5f40",
-      "public_key": "7db713da1b3f250a83fc2ebe668914fbcfc2ab59126093f7ff8e8f61357591be"
+      "node_id": "ag_b670dc6cbcb705fe",
+      "public_key": "170447069c6c3ce6bd244fe1e8b38c44b5c4ca1d66fca3a2f79d86f10e41990d"
     },
-    "timestamp": 1784288634.895026,
+    "timestamp": 1784293766.549115,
     "priority": 1,
     "correlation_id": "",
     "ttl_s": 900.0,
-    "id": "43214055-ce0f-4257-ade5-695d7432c2bc",
-    "payload_hash": "2a594a5c20d547f70be868e3f8cad14c0b7bae6df853b2320c61622663ee9e46",
-    "signature": "A2zy6wTZHZt58SSLc9kFTPuIIrZKb5HSm5kkDGJ3dSWaPTfHrDX/L+UXhIXDiFqMF/KE34mkPh2FkkD7zNbvAw=="
+    "id": "650060ca-62eb-452e-a312-04049633547e",
+    "payload_hash": "0b3256bcf2ff482c9a3bcc69eee595667f00ae472486081c0e0f89708c10f0fb",
+    "signature": "be9sj5T1gLBs//orAQMSnAydNNzH0FmprmJ5YBQ2IfjwfOZGBhQr6HSaXXwgsn/eVIbUGTZtp3dQ7VdH8/KdCg=="
   }
 ]
