@@ -1,12 +1,40 @@
 [
   {
+    "source": "ag_b670dc6cbcb705fe",
+    "target": "agent-template",
+    "operation": "heartbeat",
+    "payload": {
+      "agent_id": "agent-city",
+      "health": 1.0,
+      "timestamp": 1784327184.2638462,
+      "capabilities": [
+        "multi_agent_runtime",
+        "city_governance",
+        "federation_relay",
+        "wiki_publishing",
+        "heartbeat_observer"
+      ],
+      "repo": "kimeisele/agent-city",
+      "version": "0.1.0",
+      "node_id": "ag_b670dc6cbcb705fe",
+      "public_key": "170447069c6c3ce6bd244fe1e8b38c44b5c4ca1d66fca3a2f79d86f10e41990d"
+    },
+    "timestamp": 1784327184.652035,
+    "priority": 1,
+    "correlation_id": "",
+    "ttl_s": 900.0,
+    "id": "952f1e6b-f735-4f80-b6f6-de84357004aa",
+    "payload_hash": "e19e86cc9284bf35ee1b41804a6422468a9f3d54a2b4d90ea58cd6fafae1923e",
+    "signature": "D46NY15+oXVT5+yrhHMyWSrpvsQBmKSCh+toqg3Kf7rjMy7OvjatVijCgoCYL/BCk1s8kp2Zxqfd7GdK1YN4Cg=="
+  },
+  {
     "source": "ag_c3c5d9aed6d3dc6e",
     "target": "agent-template",
     "operation": "heartbeat",
     "payload": {
       "agent_id": "agent-research",
       "health": 1.0,
-      "timestamp": 1784323553.921025,
+      "timestamp": 1784327002.2884936,
       "capabilities": [
         "research",
         "federation_relay"
@@ -16,13 +44,13 @@
       "node_id": "ag_c3c5d9aed6d3dc6e",
       "public_key": "695a4f70c734babe9fb2fd985726e68a17a9a4d3f328a494dade54bbffacb98c"
     },
-    "timestamp": 1784323554.1347322,
+    "timestamp": 1784327002.517116,
     "priority": 1,
     "correlation_id": "",
     "ttl_s": 900.0,
-    "id": "d723b18f-dfd8-4439-b98d-f4c5ca252753",
-    "payload_hash": "19a5a500d472edfee78859add8705eb48c67338351ea75f74445b9d3288722f4",
-    "signature": "PPPawFBR/msdB73TeXSDLPfO6rwSZHSc1UfxLR/TnLil8tnNmuy6CJ3O95iWgQZV1TjfSFtph64dr2UveREHCQ=="
+    "id": "9a9580cc-4299-4ed2-9165-0a647b4f9a96",
+    "payload_hash": "547918a520f764ce80871ecd985a238d248a589e2ad4ac0fbf952276eaa07452",
+    "signature": "qG3mAgOXCTOBrzJLKLQDGicRZfjhjNCpWyns7IxlkHgOSCwOV72uZeKvH0yjkcUmRH6wphmUi65PUUzQeP7+Dg=="
   },
   {
     "source": "ag_99e616186d438ecd",
@@ -31,7 +59,7 @@
     "payload": {
       "agent_id": "agent-world",
       "health": 1.0,
-      "timestamp": 1784323257.4430387,
+      "timestamp": 1784326865.3483505,
       "capabilities": [
         "world-governance",
         "federation-registry",
@@ -43,13 +71,13 @@
       "node_id": "ag_99e616186d438ecd",
       "public_key": "3cc38ebec2cc863de3bb532305472dc238d22c1cde4c80e3b030187ea09e4c64"
     },
-    "timestamp": 1784323257.569042,
+    "timestamp": 1784326865.6491246,
     "priority": 1,
     "correlation_id": "",
     "ttl_s": 900.0,
-    "id": "03355926-fc01-4d38-a593-f110842a0d94",
-    "payload_hash": "ee3e81fa6dcd79a49e527d36e59653637afa75723a3c5ee3d88b177d241ef113",
-    "signature": "30vK7Z285wMvNE8YFQIaMPRZ5jmyqMe7LarBWoUocUcqMjhigg6aLwMxOWSqleMy2dhabfCRUoURKLYjeh8xCg=="
+    "id": "f7a0ebd9-62dd-4ff7-b436-1262857adf3c",
+    "payload_hash": "e70dd3e6adb27c7cb54126def5eb0fc8526219f6d7e231c6f6a45d752726486b",
+    "signature": "5ZNwkAjCWlyETIDo1ihTTsuyr+uVyH8j7ygZAji3g631aLb/f6K0ICDR+9l1JrQ7qRkMThzehiGQksvZrHiUCQ=="
   },
   {
     "source": "ag_9272c311628b5f40",
@@ -58,7 +86,7 @@
     "payload": {
       "agent_id": "steward-federation",
       "health": 1.0,
-      "timestamp": 1784323356.324867,
+      "timestamp": 1784327046.2216544,
       "capabilities": [
         "nadi_hub",
         "mailbox_routing",
@@ -69,12 +97,12 @@
       "node_id": "ag_9272c311628b5f40",
       "public_key": "7db713da1b3f250a83fc2ebe668914fbcfc2ab59126093f7ff8e8f61357591be"
     },
-    "timestamp": 1784323356.5310597,
+    "timestamp": 1784327046.6170695,
     "priority": 1,
     "correlation_id": "",
     "ttl_s": 900.0,
-    "id": "07246509-8ca3-4cfd-93cb-d1ebb57469ab",
-    "payload_hash": "a50c2023a00951650c50f9c74fa79ed573e1a4da217a4386a1181344aeb7aad7",
-    "signature": "jeN9epCqPE0IFyu6lMq+vMCd3JvV83Pe84OaC/31xSZ6Cw01Je8nDCPBeeT8rnwAvyQULsIMzcuEo4axQXoXCA=="
+    "id": "0097be93-0309-4f5b-8de7-1c10d549561b",
+    "payload_hash": "437688fd18d3fd4612927443a71a270b9ab7c196eb1a36de5515ce2bf5647164",
+    "signature": "6W6E6MX4+Yc75fWgYVB3gbJfdgDlLL4eU+jH2onX1XlkKSVCxypYpjTzKakV68pX+j2oJnCGcaO9y0WVW7lTBQ=="
   }
 ]
