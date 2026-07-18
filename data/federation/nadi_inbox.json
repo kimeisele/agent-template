@@ -1,1 +1,29 @@
-[]
+[
+  {
+    "source": "ag_99e616186d438ecd",
+    "target": "agent-template",
+    "operation": "heartbeat",
+    "payload": {
+      "agent_id": "agent-world",
+      "health": 1.0,
+      "timestamp": 1784382990.7169476,
+      "capabilities": [
+        "world-governance",
+        "federation-registry",
+        "role-assignment",
+        "authority-projection"
+      ],
+      "repo": "kimeisele/agent-world",
+      "version": "0.1.0",
+      "node_id": "ag_99e616186d438ecd",
+      "public_key": "3cc38ebec2cc863de3bb532305472dc238d22c1cde4c80e3b030187ea09e4c64"
+    },
+    "timestamp": 1784382990.9180186,
+    "priority": 1,
+    "correlation_id": "",
+    "ttl_s": 900.0,
+    "id": "d1981d5e-ef3b-4a42-b25f-caafaf46f9f5",
+    "payload_hash": "703df464e6eb2899f9a54723da5fc3c86a76596a4d05bd5c40e605b00e476030",
+    "signature": "TzrPwpUQBtKSuQzfgEXY2vACSsoWROlCVvv/GsgLyJt7LQnIct9Qx/I5+PcwGTIIcjzFxPByKSxP5HCAac7wAQ=="
+  }
+]
