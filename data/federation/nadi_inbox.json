@@ -1,1 +1,54 @@
-[]
+[
+  {
+    "source": "ag_5ff43ee56235aba6",
+    "target": "agent-template",
+    "operation": "heartbeat",
+    "payload": {
+      "agent_id": "agent-research",
+      "health": 1.0,
+      "timestamp": 1784476741.0937762,
+      "capabilities": [
+        "research",
+        "federation_relay"
+      ],
+      "repo": "kimeisele/agent-research",
+      "version": "0.1.0",
+      "node_id": "ag_5ff43ee56235aba6",
+      "public_key": "ab833a76862e50ea89d9a70c4e0af376a15cf52d5cab2aa949f4e703fb6a25ef"
+    },
+    "timestamp": 1784476741.2300591,
+    "priority": 1,
+    "correlation_id": "",
+    "ttl_s": 900.0,
+    "id": "11ea1763-71ce-4d94-8195-75d35a382769",
+    "payload_hash": "e396e0998e8459447616f82f8205e2c29fb756a1e79fa993e142bb75b0aac4e1",
+    "signature": "4K2WDkvN4y01VUxf/5ebodlG/hUy8jBHLJC/bVc8a5cQcIruOtfv7EXHGXuorNmvrQSKivWqvfRA8lOl/wl/BQ=="
+  },
+  {
+    "source": "ag_99e616186d438ecd",
+    "target": "agent-template",
+    "operation": "heartbeat",
+    "payload": {
+      "agent_id": "agent-world",
+      "health": 1.0,
+      "timestamp": 1784476664.743542,
+      "capabilities": [
+        "world-governance",
+        "federation-registry",
+        "role-assignment",
+        "authority-projection"
+      ],
+      "repo": "kimeisele/agent-world",
+      "version": "0.1.0",
+      "node_id": "ag_99e616186d438ecd",
+      "public_key": "3cc38ebec2cc863de3bb532305472dc238d22c1cde4c80e3b030187ea09e4c64"
+    },
+    "timestamp": 1784476665.180001,
+    "priority": 1,
+    "correlation_id": "",
+    "ttl_s": 900.0,
+    "id": "216df101-c57c-4ee6-8672-e6cc5998631a",
+    "payload_hash": "53b146faa2e1bcd75f0d977a28f174e187eed14b031a8ff0bb1d48c58174658d",
+    "signature": "A3kVkj+4LYwG1CXxtU/E+o79UCAppGnFcqWqkE/FPO/1UtLRQpfDEOf2vAN7leQLPYNyTMrtHcKL5z4qEfudAg=="
+  }
+]
