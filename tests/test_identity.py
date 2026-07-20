@@ -789,7 +789,9 @@ class TestBlocker2RemoteWriteSafety:
             tmp_path, name="Test Node", role="relay",
             repo="test-owner/test-node",
         )
-        assert "Topic (skipped" in result.stdout, (
+        # New text: "Topic registration skipped (local/offline mode)"
+        assert "Topic registration skipped" in result.stdout or \
+               "Topic (skipped" in result.stdout, (
             f"Topic must be skipped in local mode.\nstdout: {result.stdout}"
         )
 
@@ -1017,3 +1019,456 @@ class TestBlocker5ReadmeWithoutH1:
         assert content.index("# My Node Title") < content.index("<!-- BEGIN FEDERATION NODE IDENTITY -->"), (
             "Identity block must appear after H1 heading."
         )
+
+
+# ── 10. Gate 4 — Safe topic registration tests ──────────────────────────────
+
+
+class TestTopicRegistration:
+    """Topic registration must never destroy existing topics."""
+
+    def _patch_gh(self, monkeypatch, topics_before, write_succeeds=True,
+                  re_read_topics=None, gh_available=True,
+                  write_raises=None):
+        """Set up mock gh subprocess for topic operations."""
+        call_log = []
+        read_calls = [0]
+        write_calls = [0]
+
+        def _fake_run(cmd, *args, **kwargs):
+            call_log.append(cmd)
+            if cmd[0] == "gh" and "view" in cmd and "repositoryTopics" in cmd:
+                read_calls[0] += 1
+                if not gh_available:
+                    raise FileNotFoundError("gh not found")
+                topics = topics_before
+                return subprocess.CompletedProcess(
+                    args=cmd, returncode=0,
+                    stdout=json.dumps({
+                        "repositoryTopics": [
+                            {"name": t} for t in topics
+                        ]
+                    }),
+                    stderr="",
+                )
+            if cmd[0] == "gh" and "edit" in cmd and "--add-topic" in cmd:
+                write_calls[0] += 1
+                if write_raises:
+                    raise write_raises
+                if not write_succeeds:
+                    return subprocess.CompletedProcess(
+                        args=cmd, returncode=1,
+                        stdout="", stderr="permission denied",
+                    )
+                # On write success, update the "remote" state
+                nonlocal_read = re_read_topics
+                if nonlocal_read is None:
+                    nonlocal_read = list(topics_before) + ["agent-federation-node"]
+                # Subsequent reads return the updated topics
+                pass  # handled below via re_read_topics parameter
+                return subprocess.CompletedProcess(
+                    args=cmd, returncode=0, stdout="", stderr="",
+                )
+            return subprocess.CompletedProcess(
+                args=cmd, returncode=0, stdout="{}", stderr="",
+            )
+
+        # Set up re-read behavior
+        read_results = [topics_before]  # first read
+        if write_succeeds:
+            if re_read_topics is not None:
+                read_results.append(re_read_topics)
+            else:
+                read_results.append(
+                    list(topics_before) + ["agent-federation-node"]
+                )
+
+        def _fake_run_with_reread(cmd, *args, **kwargs):
+            call_log.append(cmd)
+            if cmd[0] == "gh" and "view" in cmd and "repositoryTopics" in cmd:
+                if not gh_available:
+                    raise FileNotFoundError("gh not found")
+                idx = min(len(read_results) - 1, read_calls[0])
+                topics = read_results[idx]
+                read_calls[0] += 1
+                return subprocess.CompletedProcess(
+                    args=cmd, returncode=0,
+                    stdout=json.dumps({
+                        "repositoryTopics": [
+                            {"name": t} for t in topics
+                        ]
+                    }),
+                    stderr="",
+                )
+            if cmd[0] == "gh" and "edit" in cmd and "--add-topic" in cmd:
+                write_calls[0] += 1
+                if not gh_available:
+                    raise FileNotFoundError("gh not found")
+                if not write_succeeds:
+                    return subprocess.CompletedProcess(
+                        args=cmd, returncode=1,
+                        stdout="", stderr="permission denied",
+                    )
+                return subprocess.CompletedProcess(
+                    args=cmd, returncode=0, stdout="", stderr="",
+                )
+            return subprocess.CompletedProcess(
+                args=cmd, returncode=0, stdout="{}", stderr="",
+            )
+
+        monkeypatch.setattr(subprocess, "run", _fake_run_with_reread)
+        return call_log, read_calls, write_calls
+
+    def test_already_present_no_write(self, monkeypatch) -> None:
+        """Topic already present → no write, ALREADY_PRESENT."""
+        from setup_node import _register_federation_topic, TopicResult
+        self._patch_gh(monkeypatch, ["python", "agents", "agent-federation-node"])
+
+        reg = _register_federation_topic(
+            "test-org/test-repo", allow_remote_writes=True,
+        )
+        assert reg.result == TopicResult.ALREADY_PRESENT
+        assert not reg.remote_attempted
+
+    def test_add_new_topic_preserves_existing(self, monkeypatch) -> None:
+        """Missing topic → ADDED, existing topics preserved."""
+        from setup_node import _register_federation_topic, TopicResult
+        before = ["python", "agents", "docs"]
+        self._patch_gh(monkeypatch, before)
+
+        reg = _register_federation_topic(
+            "test-org/test-repo", allow_remote_writes=True,
+        )
+        assert reg.result == TopicResult.ADDED
+        assert reg.remote_attempted
+        # All original topics preserved
+        for t in before:
+            assert t in reg.topics_after
+        assert "agent-federation-node" in reg.topics_after
+
+    def test_existing_topics_never_removed(self, monkeypatch) -> None:
+        """Five diverse topics → all preserved after add."""
+        from setup_node import _register_federation_topic, TopicResult
+        before = ["python", "rust", "agents", "federation", "ai"]
+        self._patch_gh(monkeypatch, before)
+
+        reg = _register_federation_topic(
+            "test-org/test-repo", allow_remote_writes=True,
+        )
+        assert reg.result == TopicResult.ADDED
+        for t in before:
+            assert t in reg.topics_after, f"topic '{t}' must survive"
+
+    def test_read_failure_no_write(self, monkeypatch) -> None:
+        """Cannot read topics → SKIPPED_NO_GH when gh not found."""
+        from setup_node import _register_federation_topic, TopicResult
+        self._patch_gh(monkeypatch, [], gh_available=False)
+
+        reg = _register_federation_topic(
+            "test-org/test-repo", allow_remote_writes=True,
+        )
+        # gh_available=False causes FileNotFoundError → SKIPPED_NO_GH
+        assert reg.result == TopicResult.SKIPPED_NO_GH
+        assert not reg.remote_attempted
+
+    def test_write_failure_no_false_success(self, monkeypatch) -> None:
+        """Write fails → SKIPPED_NO_PERMISSION (based on stderr 'permission denied')."""
+        from setup_node import _register_federation_topic, TopicResult
+        self._patch_gh(monkeypatch, ["python"], write_succeeds=False)
+
+        reg = _register_federation_topic(
+            "test-org/test-repo", allow_remote_writes=True,
+        )
+        # stderr contains "permission denied" → classified as SKIPPED_NO_PERMISSION
+        assert reg.result in (
+            TopicResult.SKIPPED_NO_PERMISSION, TopicResult.FAILED_WRITE,
+        )
+
+    def test_postcondition_failure_detected(self, monkeypatch) -> None:
+        """Write succeeds but re-read doesn't confirm → FAILED_POSTCONDITION."""
+        from setup_node import _register_federation_topic, TopicResult
+        # Write succeeds but re-read returns topics WITHOUT the federation topic
+        self._patch_gh(monkeypatch, ["python"],
+                       re_read_topics=["python"])  # federation topic missing!
+
+        reg = _register_federation_topic(
+            "test-org/test-repo", allow_remote_writes=True,
+        )
+        assert reg.result == TopicResult.FAILED_POSTCONDITION
+
+    def test_offline_mode_no_remote(self, monkeypatch) -> None:
+        """allow_remote_writes=False → SKIPPED_OFFLINE, no API calls."""
+        from setup_node import _register_federation_topic, TopicResult
+        call_log, _, _ = self._patch_gh(monkeypatch, ["python"])
+
+        reg = _register_federation_topic(
+            "test-org/test-repo", allow_remote_writes=False,
+        )
+        assert reg.result == TopicResult.SKIPPED_OFFLINE
+        assert not reg.remote_attempted
+        # No gh commands at all
+        assert not any("gh" in str(c) for c in call_log)
+
+    def test_no_duplicate_topics(self, monkeypatch) -> None:
+        """Even with duplicate input data, output has no duplicates."""
+        from setup_node import _register_federation_topic, TopicResult
+        # Topics returned with duplicate entries
+        raw = ["python", "agent-federation-node", "python"]
+        self._patch_gh(monkeypatch, raw)
+
+        reg = _register_federation_topic(
+            "test-org/test-repo", allow_remote_writes=True,
+        )
+        assert reg.result == TopicResult.ALREADY_PRESENT
+        assert reg.topics_after.count("python") <= 1
+
+    def test_manual_instruction_on_failure(self, monkeypatch) -> None:
+        """Failure messages include safe manual command."""
+        from setup_node import _register_federation_topic
+        self._patch_gh(monkeypatch, ["python"], write_succeeds=False)
+
+        reg = _register_federation_topic(
+            "test-org/test-repo", allow_remote_writes=True,
+        )
+        assert "gh repo edit" in reg.message
+        assert "--add-topic" in reg.message
+        assert "agent-federation-node" in reg.message
+
+
+class TestTopicPreservationPostcondition:
+    """Blocker 2: Full topic preservation check after write."""
+
+    def _patch_gh_sequence(self, monkeypatch, read_results):
+        """read_results is a list of topic lists returned on successive reads."""
+        call_idx = [0]
+        write_calls = [0]
+
+        def _fake_run(cmd, *args, **kwargs):
+            if cmd[0] == "gh" and "view" in cmd and "repositoryTopics" in cmd:
+                idx = min(call_idx[0], len(read_results) - 1)
+                topics = read_results[idx]
+                call_idx[0] += 1
+                return subprocess.CompletedProcess(
+                    args=cmd, returncode=0,
+                    stdout=json.dumps({
+                        "repositoryTopics": [{"name": t} for t in topics]
+                    }),
+                    stderr="",
+                )
+            if cmd[0] == "gh" and "edit" in cmd and "--add-topic" in cmd:
+                write_calls[0] += 1
+                return subprocess.CompletedProcess(
+                    args=cmd, returncode=0, stdout="", stderr="",
+                )
+            return subprocess.CompletedProcess(
+                args=cmd, returncode=0, stdout="{}", stderr="",
+            )
+        monkeypatch.setattr(subprocess, "run", _fake_run)
+        return write_calls
+
+    def test_write_that_removes_existing_topics_fails(self, monkeypatch):
+        """If existing topics disappear after write, FAILED_POSTCONDITION."""
+        from setup_node import _register_federation_topic, TopicResult
+        # Read-before: [python, agents, docs]
+        # Read-after:  [agent-federation-node] — python, agents, docs LOST
+        self._patch_gh_sequence(monkeypatch, [
+            ["python", "agents", "docs"],
+            ["agent-federation-node"],
+        ])
+        reg = _register_federation_topic(
+            "test-org/test-repo", allow_remote_writes=True,
+        )
+        assert reg.result == TopicResult.FAILED_POSTCONDITION, (
+            f"expected FAILED_POSTCONDITION, got {reg.result}"
+        )
+        assert "disappeared" in reg.message.lower() or "existing" in reg.message.lower()
+        assert "python" in reg.message
+
+    def test_postcondition_accepts_superset(self, monkeypatch):
+        """Extra topics added (superset) → ADDED, not FAILED."""
+        from setup_node import _register_federation_topic, TopicResult
+        self._patch_gh_sequence(monkeypatch, [
+            ["python", "agents"],
+            ["python", "agents", "agent-federation-node", "extra-topic"],
+        ])
+        reg = _register_federation_topic(
+            "test-org/test-repo", allow_remote_writes=True,
+        )
+        assert reg.result == TopicResult.ADDED
+
+
+class TestTopicErrorClassification:
+    """Blocker 3: Error classification for read/write failures."""
+
+    def _patch_gh_read(self, monkeypatch, *, side_effect=None, returncode=0,
+                       stdout="", stderr=""):
+        """Mock only gh read operations."""
+        def _fake_run(cmd, *args, **kwargs):
+            if "view" in cmd and "repositoryTopics" in cmd:
+                if side_effect:
+                    raise side_effect
+                return subprocess.CompletedProcess(
+                    args=cmd, returncode=returncode,
+                    stdout=stdout, stderr=stderr,
+                )
+            return subprocess.CompletedProcess(
+                args=cmd, returncode=0, stdout="{}", stderr="",
+            )
+        monkeypatch.setattr(subprocess, "run", _fake_run)
+
+    def test_read_file_not_found_is_no_gh(self, monkeypatch):
+        from setup_node import _register_federation_topic, TopicResult
+        self._patch_gh_read(monkeypatch, side_effect=FileNotFoundError("gh"))
+        reg = _register_federation_topic(
+            "test-org/test-repo", allow_remote_writes=True,
+        )
+        assert reg.result == TopicResult.SKIPPED_NO_GH
+
+    def test_read_timeout_is_failed(self, monkeypatch):
+        from setup_node import _register_federation_topic, TopicResult
+        self._patch_gh_read(monkeypatch, side_effect=subprocess.TimeoutExpired(
+            ["gh"], 15))
+        reg = _register_federation_topic(
+            "test-org/test-repo", allow_remote_writes=True,
+        )
+        assert reg.result == TopicResult.FAILED_READ
+
+    def test_read_auth_401_is_skipped_no_auth(self, monkeypatch):
+        from setup_node import _register_federation_topic, TopicResult
+        self._patch_gh_read(monkeypatch, returncode=1,
+                            stderr="HTTP 401 Unauthorized")
+        reg = _register_federation_topic(
+            "test-org/test-repo", allow_remote_writes=True,
+        )
+        assert reg.result == TopicResult.SKIPPED_NO_AUTH
+
+    def test_read_403_is_auth_failure(self, monkeypatch):
+        from setup_node import _register_federation_topic, TopicResult
+        self._patch_gh_read(monkeypatch, returncode=1,
+                            stderr="HTTP 403 Forbidden")
+        reg = _register_federation_topic(
+            "test-org/test-repo", allow_remote_writes=True,
+        )
+        assert reg.result == TopicResult.SKIPPED_NO_AUTH
+
+    def test_no_token_in_error_message(self, monkeypatch):
+        """Error messages must never contain secret values."""
+        from setup_node import _register_federation_topic
+        self._patch_gh_read(monkeypatch, returncode=1,
+                            stderr="HTTP 401 Unauthorized")
+        reg = _register_federation_topic(
+            "test-org/test-repo", allow_remote_writes=True,
+        )
+        assert "gho_" not in reg.message.lower()
+        assert "token" not in reg.message.lower()
+
+
+class TestSetupOutcomeExitCodes:
+    """Blocker 1: SetupOutcome.exit_code reflects topic + governance."""
+
+    def _patch_apply_config_flow(self, monkeypatch, topic_result, governance,
+                                  allow_remote=True):
+        """Patch _register_federation_topic to return a controlled result."""
+        from setup_node import (
+            TopicRegistration, TopicResult,
+            IdentitySource, SetupContext,
+        )
+
+        reg = TopicRegistration(
+            result=topic_result,
+            repository="test-org/test-repo",
+            topics_before=["python"] if topic_result != TopicResult.FAILED_READ else [],
+            topics_after=(
+                ["python", "agent-federation-node"]
+                if topic_result in (TopicResult.ADDED, TopicResult.ALREADY_PRESENT)
+                else []
+            ),
+            message="mock",
+            remote_attempted=allow_remote,
+        )
+
+        # We test the exit-code logic in apply_config → SetupOutcome
+        from setup_node import apply_config
+        # Build a minimal SetupContext
+        ctx = SetupContext(
+            identity_source=(
+                IdentitySource.REMOTE if allow_remote else IdentitySource.EXPLICIT
+            ),
+            allow_remote_writes=allow_remote,
+        )
+        # Mock the topic registration
+        monkeypatch.setattr(
+            sys.modules["setup_node"], "_register_federation_topic",
+            lambda *a, **kw: reg,
+        )
+        # Mock governance
+        monkeypatch.setattr(
+            sys.modules["setup_node"], "_run_governance_step",
+            lambda **kw: governance,
+        )
+        # Mock _write_charter etc to avoid file writes in test
+        for fn_name in ("_write_charter", "_write_capabilities",
+                         "_write_readme_identity", "_regenerate",
+                         "_write_peer_json", "_print_topic_result",
+                         "_print_readme_result"):
+            if hasattr(sys.modules["setup_node"], fn_name):
+                monkeypatch.setattr(
+                    sys.modules["setup_node"], fn_name,
+                    lambda *a, **kw: None,
+                )
+        # Also mock the mode banner print
+        # Build config
+        config = {
+            "display_name": "Test",
+            "repo_name": "test-repo",
+            "github_repo": "test-org/test-repo",
+            "description": "Test",
+            "tier": "relay",
+            "domains": [],
+            "custom_skills": [],
+            "values": "",
+            "role_id": "test_repo_relay",
+            "city_zone": "general",
+        }
+        return apply_config(
+            config, ctx=ctx, interactive=False, apply_governance=False,
+        )
+
+    def test_topic_failed_write_returns_nonzero(self, monkeypatch):
+        from setup_node import TopicResult, ComplianceStatus
+        outcome = self._patch_apply_config_flow(
+            monkeypatch, TopicResult.FAILED_WRITE, ComplianceStatus.CONFORMANT,
+        )
+        assert outcome.exit_code != 0, (
+            f"topic FAILED_WRITE must give non-zero exit, got {outcome.exit_code}"
+        )
+        assert not outcome.federation_registration_complete
+
+    def test_topic_failed_postcondition_returns_nonzero(self, monkeypatch):
+        from setup_node import TopicResult, ComplianceStatus
+        outcome = self._patch_apply_config_flow(
+            monkeypatch, TopicResult.FAILED_POSTCONDITION,
+            ComplianceStatus.CONFORMANT,
+        )
+        assert outcome.exit_code != 0
+        assert not outcome.federation_registration_complete
+
+    def test_offline_returns_zero_with_local_banner(self, monkeypatch):
+        from setup_node import TopicResult, ComplianceStatus
+        outcome = self._patch_apply_config_flow(
+            monkeypatch, TopicResult.SKIPPED_OFFLINE, ComplianceStatus.UNKNOWN,
+            allow_remote=False,
+        )
+        assert outcome.exit_code == 0, (
+            f"offline must exit 0, got {outcome.exit_code}"
+        )
+        assert outcome.local_materialization_complete
+        assert not outcome.federation_registration_complete
+
+    def test_confirmed_topic_can_succeed(self, monkeypatch):
+        from setup_node import TopicResult, ComplianceStatus
+        outcome = self._patch_apply_config_flow(
+            monkeypatch, TopicResult.ADDED, ComplianceStatus.CONFORMANT,
+        )
+        assert outcome.exit_code == 0
+        assert outcome.federation_registration_complete
