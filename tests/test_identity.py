@@ -626,3 +626,293 @@ class TestNonInteractiveSetupIdentity:
         seeds_dest = repo_dir / "data" / "federation" / "authority-descriptor-seeds.json"
         if seeds_src.exists():
             seeds_dest.write_text(seeds_src.read_text())
+
+
+# ── 9. Blocker behavior tests ───────────────────────────────────────────────
+
+
+class TestBlocker1NoGuessing:
+    """Without git remote and without --repo, setup must fail closed."""
+
+    def _run_non_interactive(
+        self, repo_root, **kwargs
+    ):
+        import subprocess as sp
+        scripts_dest = repo_root / "scripts"
+        scripts_dest.mkdir(parents=True, exist_ok=True)
+        for name in [
+            "setup_node.py", "federation_utils.py",
+            "render_federation_descriptor.py", "render_agent_card.py",
+            "export_authority_feed.py", "discover_federation_peers.py",
+        ]:
+            src = _SCRIPTS / name
+            if src.exists():
+                (scripts_dest / name).write_text(src.read_text())
+        gov_src = _SCRIPTS / "governance"
+        gov_dest = scripts_dest / "governance"
+        if gov_src.exists():
+            gov_dest.mkdir(exist_ok=True)
+            for gov_file in gov_src.iterdir():
+                if gov_file.is_file() and gov_file.suffix == ".py":
+                    (gov_dest / gov_file.name).write_text(gov_file.read_text())
+        args = [sys.executable, str(scripts_dest / "setup_node.py"),
+                "--non-interactive"]
+        for k, v in kwargs.items():
+            args.append(f"--{k.replace('_', '-')}")
+            args.append(str(v))
+        return sp.run(
+            args, capture_output=True, text=True, cwd=str(repo_root),
+            env={"PATH": os.environ.get("PATH", ""),
+                 "HOME": os.environ.get("HOME", ""),
+                 "USER": os.environ.get("USER", ""),
+                 "TMPDIR": os.environ.get("TMPDIR", "/tmp")},
+        )
+
+    def _setup_skel(self, tmp_path):
+        (tmp_path / "docs" / "authority").mkdir(parents=True, exist_ok=True)
+        (tmp_path / "data" / "federation").mkdir(parents=True, exist_ok=True)
+        (tmp_path / ".well-known").mkdir(parents=True, exist_ok=True)
+        caps = tmp_path / "docs" / "authority" / "capabilities.json"
+        caps.write_text(json.dumps({"skills": []}))
+        seeds = tmp_path / "data" / "federation" / "authority-descriptor-seeds.json"
+        seeds.write_text(json.dumps({"descriptor_urls": []}))
+
+    def test_no_remote_no_repo_fails(self, tmp_path):
+        """Exit non-zero when identity cannot be determined."""
+        self._setup_skel(tmp_path)
+        result = self._run_non_interactive(
+            tmp_path, name="Test Node", role="relay",
+        )
+        assert result.returncode != 0, (
+            f"Expected non-zero exit, got {result.returncode}\n"
+            f"stdout: {result.stdout}\nstderr: {result.stderr}"
+        )
+        assert "cannot determine repository identity" in result.stderr.lower()
+
+    def test_no_remote_no_repo_no_config_file(self, tmp_path):
+        """No .federation-setup.json is created on identity failure."""
+        self._setup_skel(tmp_path)
+        self._run_non_interactive(tmp_path, name="Test Node", role="relay")
+        assert not (tmp_path / ".federation-setup.json").exists(), (
+            ".federation-setup.json must not be created on identity failure"
+        )
+
+    def test_no_remote_no_repo_no_topic_output(self, tmp_path):
+        """Topic operation must not appear in output when identity fails."""
+        self._setup_skel(tmp_path)
+        result = self._run_non_interactive(
+            tmp_path, name="Test Node", role="relay",
+        )
+        assert "agent-federation-node" not in result.stdout, (
+            "topic operation must not appear in output"
+        )
+
+
+class TestBlocker2RemoteWriteSafety:
+    """--repo without git remote must disable remote writes."""
+
+    def _run_non_interactive(self, repo_root, **kwargs):
+        import subprocess as sp
+        scripts_dest = repo_root / "scripts"
+        scripts_dest.mkdir(parents=True, exist_ok=True)
+        for name in [
+            "setup_node.py", "federation_utils.py",
+            "render_federation_descriptor.py", "render_agent_card.py",
+            "export_authority_feed.py", "discover_federation_peers.py",
+        ]:
+            src = _SCRIPTS / name
+            if src.exists():
+                (scripts_dest / name).write_text(src.read_text())
+        gov_src = _SCRIPTS / "governance"
+        gov_dest = scripts_dest / "governance"
+        if gov_src.exists():
+            gov_dest.mkdir(exist_ok=True)
+            for gov_file in gov_src.iterdir():
+                if gov_file.is_file() and gov_file.suffix == ".py":
+                    (gov_dest / gov_file.name).write_text(gov_file.read_text())
+        args = [sys.executable, str(scripts_dest / "setup_node.py"),
+                "--non-interactive"]
+        for k, v in kwargs.items():
+            args.append(f"--{k.replace('_', '-')}")
+            args.append(str(v))
+        return sp.run(
+            args, capture_output=True, text=True, cwd=str(repo_root),
+            env={"PATH": os.environ.get("PATH", ""),
+                 "HOME": os.environ.get("HOME", ""),
+                 "USER": os.environ.get("USER", ""),
+                 "TMPDIR": os.environ.get("TMPDIR", "/tmp")},
+        )
+
+    def _setup_skel(self, tmp_path):
+        (tmp_path / "docs" / "authority").mkdir(parents=True, exist_ok=True)
+        (tmp_path / "data" / "federation").mkdir(parents=True, exist_ok=True)
+        (tmp_path / ".well-known").mkdir(parents=True, exist_ok=True)
+        caps = tmp_path / "docs" / "authority" / "capabilities.json"
+        caps.write_text(json.dumps({"skills": []}))
+        seeds = tmp_path / "data" / "federation" / "authority-descriptor-seeds.json"
+        seeds.write_text(json.dumps({"descriptor_urls": []}))
+
+    def test_repo_without_remote_produces_local_files(self, tmp_path):
+        """--repo with no git remote generates local files successfully."""
+        self._setup_skel(tmp_path)
+        result = self._run_non_interactive(
+            tmp_path, name="Test Node", role="relay",
+            repo="test-owner/test-node",
+        )
+        assert result.returncode == 0, (
+            f"Expected success (local mode), got {result.returncode}\n"
+            f"stderr: {result.stderr}"
+        )
+        assert (tmp_path / ".federation-setup.json").exists()
+        config = json.loads((tmp_path / ".federation-setup.json").read_text())
+        assert config["github_repo"] == "test-owner/test-node"
+        assert config["display_name"] == "Test Node"
+
+    def test_repo_without_remote_shows_local_mode(self, tmp_path):
+        """Output must clearly indicate LOCAL / OFFLINE MODE."""
+        self._setup_skel(tmp_path)
+        result = self._run_non_interactive(
+            tmp_path, name="Test Node", role="relay",
+            repo="test-owner/test-node",
+        )
+        assert "LOCAL" in result.stdout or "OFFLINE" in result.stdout, (
+            f"Must show local/offline mode indicator.\nstdout: {result.stdout}"
+        )
+
+    def test_repo_without_remote_no_topic_write(self, tmp_path):
+        """Topic write must not be attempted in local mode."""
+        self._setup_skel(tmp_path)
+        result = self._run_non_interactive(
+            tmp_path, name="Test Node", role="relay",
+            repo="test-owner/test-node",
+        )
+        assert "Topic (skipped" in result.stdout, (
+            f"Topic must be skipped in local mode.\nstdout: {result.stdout}"
+        )
+
+    def test_repo_conflicts_with_remote_fails(self, tmp_path):
+        """--repo that differs from git remote must fail closed."""
+        self._setup_skel(tmp_path)
+        # Build a minimal valid git repo so repo_from_git_remote succeeds.
+        git_dir = tmp_path / ".git"
+        git_dir.mkdir()
+        (git_dir / "config").write_text(
+            '[remote "origin"]\n\turl = https://github.com/real-org/real-repo.git\n'
+        )
+        (git_dir / "HEAD").write_text("ref: refs/heads/main\n")
+        (git_dir / "objects").mkdir()
+        (git_dir / "refs").mkdir()
+        (git_dir / "refs" / "heads").mkdir()
+        result = self._run_non_interactive(
+            tmp_path, name="Test Node", role="relay",
+            repo="other-org/other-repo",
+        )
+        assert result.returncode != 0, (
+            f"Must fail when --repo conflicts with remote.\n"
+            f"stdout: {result.stdout}\nstderr: {result.stderr}"
+        )
+        assert "conflicts" in result.stderr.lower()
+
+    def test_repo_matches_remote_allows_writes(self, tmp_path):
+        """--repo that matches git remote allows normal operation."""
+        self._setup_skel(tmp_path)
+        git_dir = tmp_path / ".git"
+        git_dir.mkdir()
+        (git_dir / "config").write_text(
+            '[remote "origin"]\n\turl = https://github.com/match-org/match-repo.git\n'
+        )
+        (git_dir / "HEAD").write_text("ref: refs/heads/main\n")
+        result = self._run_non_interactive(
+            tmp_path, name="Test Node", role="relay",
+            repo="match-org/match-repo",
+        )
+        assert result.returncode == 0, (
+            f"Expected success when --repo matches remote.\n"
+            f"stderr: {result.stderr}"
+        )
+        config = json.loads((tmp_path / ".federation-setup.json").read_text())
+        assert config["github_repo"] == "match-org/match-repo"
+
+
+class TestBlocker4ReadmeHonesty:
+    """Malformed README markers must not produce false success."""
+
+    def _run_setup(self, repo_root, repo):
+        import subprocess as sp
+        scripts_dest = repo_root / "scripts"
+        scripts_dest.mkdir(parents=True, exist_ok=True)
+        for name in [
+            "setup_node.py", "federation_utils.py",
+            "render_federation_descriptor.py", "render_agent_card.py",
+            "export_authority_feed.py", "discover_federation_peers.py",
+        ]:
+            src = _SCRIPTS / name
+            if src.exists():
+                (scripts_dest / name).write_text(src.read_text())
+        gov_src = _SCRIPTS / "governance"
+        gov_dest = scripts_dest / "governance"
+        if gov_src.exists():
+            gov_dest.mkdir(exist_ok=True)
+            for gov_file in gov_src.iterdir():
+                if gov_file.is_file() and gov_file.suffix == ".py":
+                    (gov_dest / gov_file.name).write_text(gov_file.read_text())
+        return sp.run(
+            [sys.executable, str(scripts_dest / "setup_node.py"),
+             "--non-interactive", "--name", "Test Node", "--role", "relay",
+             "--repo", repo, "--org", "dummy"],
+            capture_output=True, text=True, cwd=str(repo_root),
+        )
+
+    def _setup_skel(self, tmp_path):
+        (tmp_path / "docs" / "authority").mkdir(parents=True, exist_ok=True)
+        (tmp_path / "data" / "federation").mkdir(parents=True, exist_ok=True)
+        (tmp_path / ".well-known").mkdir(parents=True, exist_ok=True)
+        caps = tmp_path / "docs" / "authority" / "capabilities.json"
+        caps.write_text(json.dumps({"skills": []}))
+        seeds = tmp_path / "data" / "federation" / "authority-descriptor-seeds.json"
+        seeds.write_text(json.dumps({"descriptor_urls": []}))
+
+    def test_double_begin_no_green_check(self, tmp_path):
+        """Double BEGIN markers → malformed, no green check, file unchanged."""
+        self._setup_skel(tmp_path)
+        readme = tmp_path / "README.md"
+        original = (
+            "# Test\n\n<!-- BEGIN FEDERATION NODE IDENTITY -->\n"
+            "<!-- BEGIN FEDERATION NODE IDENTITY -->\n"
+            "> **Node:** Old\n"
+            "<!-- END FEDERATION NODE IDENTITY -->\n"
+        )
+        readme.write_text(original)
+        result = self._run_setup(tmp_path, "test-org/test-node")
+        assert result.returncode == 0
+        assert "✓ README" not in result.stdout, (
+            f"Must not show green checkmark for malformed README.\n{result.stdout}"
+        )
+        assert readme.read_text() == original
+
+    def test_missing_end_no_green_check(self, tmp_path):
+        """Missing END marker → malformed, file unchanged."""
+        self._setup_skel(tmp_path)
+        readme = tmp_path / "README.md"
+        original = (
+            "# Test\n\n<!-- BEGIN FEDERATION NODE IDENTITY -->\n"
+            "> **Node:** Old\n"
+        )
+        readme.write_text(original)
+        result = self._run_setup(tmp_path, "test-org/test-node")
+        assert "✓ README" not in result.stdout
+        assert readme.read_text() == original
+
+    def test_end_before_begin_no_green_check(self, tmp_path):
+        """END before BEGIN → malformed, file unchanged."""
+        self._setup_skel(tmp_path)
+        readme = tmp_path / "README.md"
+        original = (
+            "# Test\n\n<!-- END FEDERATION NODE IDENTITY -->\n"
+            "garbage\n<!-- BEGIN FEDERATION NODE IDENTITY -->\n"
+            "> **Node:** Old\n"
+        )
+        readme.write_text(original)
+        result = self._run_setup(tmp_path, "test-org/test-node")
+        assert "✓ README" not in result.stdout
+        assert readme.read_text() == original

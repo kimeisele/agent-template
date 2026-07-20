@@ -17,10 +17,12 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import enum
 import json
 import os
 import subprocess
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 
 # Add scripts/ to path so governance can import federation_utils
@@ -46,6 +48,38 @@ CYAN = "\033[36m"
 BOLD = "\033[1m"
 DIM = "\033[2m"
 RESET = "\033[0m"
+
+
+# ── Structured identity and result types ────────────────────────────────────
+
+
+class IdentitySource(enum.Enum):
+    """How the repository identity was determined."""
+
+    REMOTE = "remote"       # Detected from git remote origin
+    EXPLICIT = "explicit"   # From --repo CLI flag
+    NONE = "none"           # Cannot be determined
+
+
+class ReadmeResult(enum.Enum):
+    """Outcome of the README identity block write."""
+
+    INSERTED = "inserted"             # Block was added where none existed
+    UPDATED = "updated"               # Existing block content was replaced
+    UNCHANGED = "unchanged"           # Block exists and content is identical
+    SKIPPED_MALFORMED = "skipped_malformed"  # Markers damaged, no write
+    SKIPPED_NO_README = "skipped_no_readme"  # No README file (created new)
+
+
+@dataclass
+class SetupContext:
+    """Resolved identity and safety flags for one setup invocation."""
+
+    identity_source: IdentitySource
+    allow_remote_writes: bool
+    # When allow_remote_writes is False, topic and governance writes
+    # are gated off regardless of CLI flags.
+
 
 # ── Federation constants ──────────────────────────────────────────────────
 
@@ -206,11 +240,13 @@ _BLOCK_BEGIN = "<!-- BEGIN FEDERATION NODE IDENTITY -->"
 _BLOCK_END = "<!-- END FEDERATION NODE IDENTITY -->"
 
 
-def _write_readme_identity(config: dict) -> None:
+def _write_readme_identity(config: dict) -> ReadmeResult:
     """Insert or update the federation node identity block in README.md.
 
     Only content between the ``BEGIN`` / ``END`` markers is touched;
     everything outside the block is preserved byte-for-byte.
+
+    Returns a :class:`ReadmeResult` indicating what happened.
     """
     readme_path = REPO_ROOT / "README.md"
     tier = TIERS[config["tier"]]
@@ -229,46 +265,47 @@ def _write_readme_identity(config: dict) -> None:
     block_text = "\n".join(block_lines)
 
     if not readme_path.exists():
-        # No README — write one containing only the identity block.
         readme_path.write_text(
             block_text + "\n\n_No README content yet — add your documentation here._\n"
         )
-        return
+        return ReadmeResult.SKIPPED_NO_README
 
     original = readme_path.read_text()
 
-    # Count markers
     begin_count = original.count(_BLOCK_BEGIN)
     end_count = original.count(_BLOCK_END)
 
     if begin_count == 0 and end_count == 0:
-        # No block present — insert after the first heading line.
         lines = original.splitlines(keepends=True)
         result_lines: list[str] = []
         inserted = False
         for line in lines:
             result_lines.append(line)
             if not inserted and line.startswith("# "):
-                # Insert identity block after the title heading
                 result_lines.append("\n")
                 result_lines.append(block_text)
                 result_lines.append("\n")
                 inserted = True
         readme_path.write_text("".join(result_lines))
-        return
+        return ReadmeResult.INSERTED
 
     if begin_count != 1 or end_count != 1:
-        print(
-            f"  {YELLOW}warning: README identity block markers are malformed "
-            f"(BEGIN={begin_count}, END={end_count}). "
-            f"Skipping README update to avoid damage.{RESET}"
-        )
-        return
+        return ReadmeResult.SKIPPED_MALFORMED
+
+    begin_idx = original.index(_BLOCK_BEGIN)
+    end_idx = original.index(_BLOCK_END)
+    if end_idx < begin_idx:
+        # END appears before BEGIN — malformed.
+        return ReadmeResult.SKIPPED_MALFORMED
 
     # Replace existing block content
-    before_block = original[: original.index(_BLOCK_BEGIN)]
-    after_block = original[original.index(_BLOCK_END) + len(_BLOCK_END):]
-    readme_path.write_text(before_block + block_text + after_block)
+    before_block = original[:begin_idx]
+    after_block = original[end_idx + len(_BLOCK_END):]
+    new_content = before_block + block_text + after_block
+    if new_content == original:
+        return ReadmeResult.UNCHANGED
+    readme_path.write_text(new_content)
+    return ReadmeResult.UPDATED
 
 
 def _write_charter(config: dict) -> None:
@@ -466,7 +503,12 @@ def _set_federation_topic(repo_full_name: str) -> bool:
 # ── Main wizard ───────────────────────────────────────────────────────────
 
 
-def interactive_setup() -> dict:
+def interactive_setup() -> tuple[dict | None, SetupContext]:
+    """Run the interactive setup wizard.
+
+    Returns ``(config, ctx)`` where *config* is ``None`` if the user
+    aborted or identity could not be resolved.
+    """
     print(f"\n{BOLD}{'═' * 60}{RESET}")
     print(f"{BOLD}  Federation Node Setup Wizard{RESET}")
     print(f"{BOLD}{'═' * 60}{RESET}")
@@ -481,15 +523,27 @@ def interactive_setup() -> dict:
     # Resolve repository identity from the actual git remote.
     detected_repo = repo_from_git_remote(REPO_ROOT)
     if detected_repo:
-        detected_org, detected_slug = detected_repo.split("/", 1)
         print(f"\n  {DIM}Detected repository: {BOLD}{detected_repo}{RESET}")
-        github_org = _ask("GitHub org/user", detected_org)
-        repo_name = _ask("Repository slug", detected_slug)
+        if not _ask_yn(f"Use detected repository {detected_repo}?", default=True):
+            print(f"\n  {YELLOW}Setup aborted. Re-run with --repo for offline mode.{RESET}")
+            return None, SetupContext(
+                identity_source=IdentitySource.REMOTE,
+                allow_remote_writes=True,
+            )
+        github_repo = detected_repo
+        repo_name = detected_repo.split("/", 1)[1]
+        ctx = SetupContext(
+            identity_source=IdentitySource.REMOTE,
+            allow_remote_writes=True,
+        )
     else:
-        print(f"\n  {YELLOW}No git remote found — repository identity must be explicit.{RESET}")
-        repo_name = display_name.lower().replace(" ", "-")
-        repo_name = _ask("Repository slug", repo_name)
-        github_org = _ask("GitHub org/user", "kimeisele")
+        print(f"\n  {YELLOW}No git remote found.{RESET}")
+        print(f"  {DIM}Interactive setup requires a git remote.{RESET}")
+        print(f"  {DIM}Use --repo with --non-interactive for offline mode.{RESET}")
+        return None, SetupContext(
+            identity_source=IdentitySource.NONE,
+            allow_remote_writes=False,
+        )
 
     description = _ask("One-line description", f"{display_name} — a federation node")
 
@@ -530,7 +584,7 @@ def interactive_setup() -> dict:
     return {
         "display_name": display_name,
         "repo_name": repo_name,
-        "github_repo": f"{github_org}/{repo_name}",
+        "github_repo": github_repo,
         "description": description,
         "tier": tier,
         "domains": domains,
@@ -538,12 +592,28 @@ def interactive_setup() -> dict:
         "values": values,
         "role_id": role_id,
         "city_zone": city_zone,
-    }
+    }, ctx
 
 
-def apply_config(config: dict, *, interactive: bool, apply_governance: bool) -> int:
+def apply_config(
+    config: dict,
+    *,
+    ctx: SetupContext,
+    interactive: bool,
+    apply_governance: bool,
+) -> int:
     tier = TIERS[config["tier"]]
     zone = CITY_ZONES.get(config.get("city_zone", ""), {})
+
+    # ── Show mode banner ──
+    if not ctx.allow_remote_writes:
+        print(
+            f"\n{BOLD}── {YELLOW}LOCAL / OFFLINE MODE{RESET}{BOLD} ——{RESET}"
+        )
+        print(
+            f"  {DIM}Remote writes (topic, governance) are DISABLED."
+            f"  Local files only.{RESET}"
+        )
 
     print(f"\n{BOLD}── Phase 1: Writing Local Config ──{RESET}\n")
     print(f"  Node:     {GREEN}{config['display_name']}{RESET}")
@@ -564,8 +634,8 @@ def apply_config(config: dict, *, interactive: bool, apply_governance: bool) -> 
     _write_capabilities(config)
     print(f"    {GREEN}✓{RESET} docs/authority/capabilities.json")
 
-    _write_readme_identity(config)
-    print(f"    {GREEN}✓{RESET} README.md (identity block)")
+    readme_result = _write_readme_identity(config)
+    _print_readme_result(readme_result)
 
     _regenerate(config)
     print(f"    {GREEN}✓{RESET} .well-known/agent-federation.json")
@@ -613,11 +683,20 @@ def apply_config(config: dict, *, interactive: bool, apply_governance: bool) -> 
     print("  Register manually when ready:")
     print(f"    {CYAN}https://github.com/{AGENT_CITY_REPO}/issues/new?template=agent-registration.yml{RESET}")
 
-    # Federation topic
-    topic_ok = _set_federation_topic(config["github_repo"])
+    # Federation topic (gated)
+    topic_ok = False
+    if ctx.allow_remote_writes:
+        topic_ok = _set_federation_topic(config["github_repo"])
+    else:
+        print(
+            f"\n  {DIM}── Topic (skipped — local/offline mode) ──{RESET}"
+        )
 
     # ── Governance: branch protection baseline ──
-    governance_exit = _run_governance_step(interactive=interactive, apply_governance=apply_governance)
+    governance_exit = _run_governance_step(
+        interactive=interactive,
+        apply_governance=apply_governance and ctx.allow_remote_writes,
+    )
 
     # Next steps
     print(f"\n{BOLD}── Next Steps ──{RESET}\n")
@@ -628,8 +707,10 @@ def apply_config(config: dict, *, interactive: bool, apply_governance: bool) -> 
     print(f"  5. Open Pull Request:    {CYAN}(PR from setup-federation-node → main){RESET}")
     if topic_ok:
         print(f"  6. Topic:                {GREEN}agent-federation-node ✓{RESET}")
-    else:
+    elif ctx.allow_remote_writes:
         print(f"  6. Add the topic:        {CYAN}gh repo edit --add-topic agent-federation-node{RESET}")
+    else:
+        print(f"  6. Add the topic:        {CYAN}gh repo edit --add-topic agent-federation-node{RESET}  {DIM}(once pushed){RESET}")
     print(f"  7. Register with city:   {CYAN}(link above){RESET}")
     print("  8. Review + merge PR")
     print(f"  9. Start NADI daemon:    {CYAN}python scripts/nadi_daemon.py --once{RESET}")
@@ -638,6 +719,23 @@ def apply_config(config: dict, *, interactive: bool, apply_governance: bool) -> 
     print(f"  Apply governance: {CYAN}python scripts/setup_node.py --apply-governance{RESET}")
     print()
     return governance_exit
+
+
+def _print_readme_result(result: ReadmeResult) -> None:
+    """Print the appropriate status line for a ReadmeResult."""
+    if result == ReadmeResult.INSERTED:
+        print(f"    {GREEN}✓{RESET} README.md (identity block inserted)")
+    elif result == ReadmeResult.UPDATED:
+        print(f"    {GREEN}✓{RESET} README.md (identity block updated)")
+    elif result == ReadmeResult.UNCHANGED:
+        print(f"    {GREEN}✓{RESET} README.md (identity block unchanged)")
+    elif result == ReadmeResult.SKIPPED_NO_README:
+        print(f"    {GREEN}✓{RESET} README.md (created with identity block)")
+    elif result == ReadmeResult.SKIPPED_MALFORMED:
+        print(
+            f"    {YELLOW}✗{RESET} README.md ({YELLOW}skipped{RESET} — "
+            f"identity block markers are malformed; fix manually)"
+        )
 
 
 def _run_governance_step(*, interactive: bool, apply_governance: bool) -> ComplianceStatus:
@@ -835,48 +933,102 @@ def main() -> int:
         return _run_governance_standalone()
 
     # ── Normal setup flow ──
+    ctx: SetupContext
     if args.non_interactive:
-        # Derive repository identity.
-        if args.repo:
-            # Explicit override (offline/test only).
-            github_repo = args.repo
-            repo_name = args.repo.split("/", 1)[1]
-        else:
-            detected_repo = repo_from_git_remote(REPO_ROOT)
-            if detected_repo:
-                github_repo = detected_repo
-                repo_name = detected_repo.split("/", 1)[1]
-            else:
-                # No remote and no explicit --repo — fall back to CLI args
-                # (offline/test mode).  Remote write operations will fail.
-                repo_name = args.name.lower().replace(" ", "-")
-                github_repo = f"{args.org}/{repo_name}"
-                print(
-                    f"\n  {YELLOW}warning: no git remote found — using guessed repository "
-                    f"identity {github_repo}. Remote write operations will target this "
-                    f"repository. Use --repo to override explicitly.{RESET}",
-                    file=sys.stderr,
-                )
-        config = {
-            "display_name": args.name,
-            "repo_name": repo_name,
-            "github_repo": github_repo,
-            "description": args.description or f"{args.name} — a federation node",
-            "tier": args.role,
-            "domains": [],
-            "custom_skills": [],
-            "values": "",
-            "role_id": f"{repo_name.replace('-', '_')}_{args.role}",
-            "city_zone": args.zone or TIER_TO_ZONE.get(args.role, "general"),
-        }
+        ctx, config = _resolve_non_interactive(args)
+        if config is None:
+            # Identity resolution failed — ctx carries the error.
+            return 1
     else:
-        config = interactive_setup()
+        config, ctx = interactive_setup()
+        if config is None:
+            # User aborted or identity not resolvable.
+            return 1
 
-    governance_exit = apply_config(config, interactive=not args.non_interactive, apply_governance=args.apply_governance)
+    governance_exit = apply_config(
+        config,
+        ctx=ctx,
+        interactive=not args.non_interactive,
+        apply_governance=args.apply_governance,
+    )
     if args.apply_governance:
-        # With explicit --apply-governance, exit code reflects governance result
         return governance_exit
     return 0
+
+
+def _resolve_non_interactive(args) -> tuple[SetupContext, dict | None]:
+    """Resolve identity for the non-interactive path.
+
+    Returns ``(ctx, config)`` where *config* is ``None`` on failure.
+    """
+    if args.repo:
+        github_repo = args.repo
+        repo_name = args.repo.split("/", 1)[1]
+
+        # Check whether --repo matches the actual git remote
+        detected = repo_from_git_remote(REPO_ROOT)
+        if detected and detected != github_repo:
+            print(
+                f"error: --repo {github_repo} conflicts with detected git "
+                f"remote {detected}. Refusing to proceed.",
+                file=sys.stderr,
+            )
+            return (
+                SetupContext(identity_source=IdentitySource.EXPLICIT,
+                             allow_remote_writes=False),
+                None,
+            )
+
+        # --repo without git remote → local/offline mode
+        allow_remote = detected is not None and detected == github_repo
+        ctx = SetupContext(
+            identity_source=IdentitySource.EXPLICIT,
+            allow_remote_writes=allow_remote,
+        )
+        if not allow_remote:
+            print(
+                f"\n  {YELLOW}── LOCAL / OFFLINE MODE ──{RESET}"
+            )
+            print(
+                f"  {DIM}--repo {github_repo} cannot be verified against "
+                f"a git remote. Local files will be generated, but remote "
+                f"writes (topic, governance) are disabled.{RESET}"
+            )
+    else:
+        detected = repo_from_git_remote(REPO_ROOT)
+        if not detected:
+            print(
+                "error: cannot determine repository identity. "
+                "No git remote found and --repo not specified. "
+                "Run from a git checkout with a GitHub remote, "
+                "or use --repo for offline/local materialization.",
+                file=sys.stderr,
+            )
+            return (
+                SetupContext(identity_source=IdentitySource.NONE,
+                             allow_remote_writes=False),
+                None,
+            )
+        github_repo = detected
+        repo_name = detected.split("/", 1)[1]
+        ctx = SetupContext(
+            identity_source=IdentitySource.REMOTE,
+            allow_remote_writes=True,
+        )
+
+    config = {
+        "display_name": args.name,
+        "repo_name": repo_name,
+        "github_repo": github_repo,
+        "description": args.description or f"{args.name} — a federation node",
+        "tier": args.role,
+        "domains": [],
+        "custom_skills": [],
+        "values": "",
+        "role_id": f"{repo_name.replace('-', '_')}_{args.role}",
+        "city_zone": args.zone or TIER_TO_ZONE.get(args.role, "general"),
+    }
+    return ctx, config
 
 
 def _run_governance_standalone() -> int:
