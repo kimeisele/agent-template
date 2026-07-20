@@ -344,8 +344,8 @@ def _ensure_baseline_ruleset(repo: RepoInfo) -> tuple[str | None, Diagnostic]:
     # 5. Single candidate — validate ID
     candidate = candidates[0]
     candidate_id = candidate.get("id")
-    if not isinstance(candidate_id, int):
-        # Candidate exists but ID is missing or invalid → do not touch
+    if type(candidate_id) is not int or candidate_id <= 0:
+        # Candidate exists but ID is missing, invalid, or non-positive → do not touch
         return None, Diagnostic.UNSUPPORTED_CONFIG
 
     # 6. Fetch the full, authoritative ruleset detail by ID
@@ -430,19 +430,23 @@ def _is_compatible(existing: dict) -> tuple[bool, str]:
     if "~DEFAULT_BRANCH" not in include:
         return False, "default_branch_not_targeted"
 
-    # ── 4. Bypass actors must be absent or empty ────────────────────────
+    # exclude must be present and empty (no pattern interpretation in v1)
+    exclude = ref_name.get("exclude")
+    if not isinstance(exclude, list):
+        return False, "conditions_exclude_missing_or_invalid"
+    if len(exclude) != 0:
+        return False, "conditions_exclude_not_empty"
+
+    # ── 4. Bypass actors must be exactly empty ──────────────────────────
+    # In v1, only an empty list is compatible.  No individual-entry
+    # interpretation — any non-empty list is incompatible.
     bypass = existing.get("bypass_actors")
     if bypass is None:
-        # Field is absent — cannot confirm safety
         return False, "bypass_actors_missing"
     if not isinstance(bypass, list):
         return False, "bypass_actors_invalid_type"
-    for ba in bypass:
-        if not isinstance(ba, dict):
-            return False, "bypass_actors_invalid_type"
-        mode = ba.get("bypass_mode", "")
-        if mode and mode != "none":
-            return False, "unexpected_bypass_actors"
+    if len(bypass) != 0:
+        return False, "unexpected_bypass_actors"
 
     # ── 5. Rules must contain all baseline types ────────────────────────
     existing_rules = existing.get("rules")
@@ -467,7 +471,7 @@ def _is_compatible(existing: dict) -> tuple[bool, str]:
             if not isinstance(params, dict):
                 return False, "pull_request_parameters_missing_or_invalid"
             count = params.get("required_approving_review_count")
-            if not isinstance(count, int) or count < 0:
+            if type(count) is not int or count < 0:
                 return False, "pull_request_review_count_invalid"
             pull_request_count = count
 

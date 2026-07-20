@@ -1442,3 +1442,195 @@ class TestBlocker9CompatibilityCheck:
         compatible, reason = _is_compatible(existing)
         assert compatible is True
         assert reason == "stricter"
+
+
+class TestBlocker10Conservative:
+    """Blocker 10: exclude field, bypass_actors strictness, bool/int type safety."""
+
+    _BASE = {
+        "name": "agent-federation-baseline-v1",
+        "target": "branch",
+        "enforcement": "active",
+        "bypass_actors": [],
+        "conditions": {"ref_name": {"include": ["~DEFAULT_BRANCH"], "exclude": []}},
+        "rules": [
+            {"type": "deletion"},
+            {"type": "non_fast_forward"},
+            {"type": "pull_request", "parameters": {"required_approving_review_count": 0}},
+        ],
+    }
+
+    # ── 10.1 exclude validation ─────────────────────────────────────────
+
+    def test_exclude_missing_incompatible(self) -> None:
+        """exclude field absent → incompatible."""
+        existing = {
+            **self._BASE,
+            "conditions": {"ref_name": {"include": ["~DEFAULT_BRANCH"]}},
+        }
+        compatible, reason = _is_compatible(existing)
+        assert compatible is False
+        assert "exclude" in reason
+
+    def test_exclude_wrong_type_incompatible(self) -> None:
+        """exclude not a list → incompatible."""
+        existing = {
+            **self._BASE,
+            "conditions": {"ref_name": {"include": ["~DEFAULT_BRANCH"], "exclude": "not-a-list"}},
+        }
+        compatible, reason = _is_compatible(existing)
+        assert compatible is False
+        assert "exclude" in reason
+
+    def test_exclude_default_branch_incompatible(self) -> None:
+        """exclude contains ~DEFAULT_BRANCH → incompatible."""
+        existing = {
+            **self._BASE,
+            "conditions": {"ref_name": {"include": ["~DEFAULT_BRANCH"], "exclude": ["~DEFAULT_BRANCH"]}},
+        }
+        compatible, reason = _is_compatible(existing)
+        assert compatible is False
+        assert "exclude" in reason
+
+    def test_exclude_with_pattern_incompatible(self) -> None:
+        """exclude contains any pattern → conservative incompatible."""
+        existing = {
+            **self._BASE,
+            "conditions": {"ref_name": {"include": ["~DEFAULT_BRANCH"], "exclude": ["refs/heads/main"]}},
+        }
+        compatible, reason = _is_compatible(existing)
+        assert compatible is False
+        assert "exclude" in reason
+
+    def test_exclude_empty_valid(self) -> None:
+        """exclude: [] → compatible (exact)."""
+        compatible, reason = _is_compatible(self._BASE)
+        assert compatible is True
+        assert reason == "exact"
+
+    # ── 10.2 bypass_actors strictness ───────────────────────────────────
+
+    def test_bypass_empty_object_incompatible(self) -> None:
+        """[{}] → incompatible (any non-empty list rejected)."""
+        existing = {**self._BASE, "bypass_actors": [{}]}
+        compatible, reason = _is_compatible(existing)
+        assert compatible is False
+        assert "bypass" in reason
+
+    def test_bypass_empty_mode_incompatible(self) -> None:
+        """[{"bypass_mode": ""}] → incompatible."""
+        existing = {**self._BASE, "bypass_actors": [{"bypass_mode": ""}]}
+        compatible, reason = _is_compatible(existing)
+        assert compatible is False
+        assert "bypass" in reason
+
+    def test_bypass_mode_none_incompatible(self) -> None:
+        """[{"bypass_mode": "none"}] → incompatible (non-empty list rejected)."""
+        existing = {**self._BASE, "bypass_actors": [{"bypass_mode": "none"}]}
+        compatible, reason = _is_compatible(existing)
+        assert compatible is False
+        assert "bypass" in reason
+
+    def test_bypass_empty_list_valid(self) -> None:
+        """[] → compatible."""
+        existing = {**self._BASE, "bypass_actors": []}
+        compatible, reason = _is_compatible(existing)
+        assert compatible is True
+
+    # ── 10.3 bool/int type safety ───────────────────────────────────────
+
+    @patch("governance._protection.github_api")
+    def test_candidate_id_true_no_post(self, mock_api: object) -> None:
+        """Candidate ID is True (bool subclass of int) → no POST."""
+        list_with_true_id = GitHubResponse(
+            status_code=200,
+            body=[{"name": "agent-federation-baseline-v1", "id": True}],
+            error_message=None,
+        )
+        call_methods: list[str] = []
+
+        def side_effect(method: str, path: str, body: object = None, *, token: str | None = None) -> GitHubResponse:
+            call_methods.append(method)
+            if "/rulesets" in path and "includes_parents" in path:
+                return list_with_true_id
+            return GitHubResponse(status_code=200, body={}, error_message=None)
+
+        mock_api.side_effect = side_effect
+        result = ensure_governance_baseline(
+            REPO,
+            GovernanceCheck(compliance=ComplianceStatus.NON_CONFORMANT, default_branch="main"),
+        )
+        assert result.action is None
+        assert "POST" not in call_methods
+
+    @patch("governance._protection.github_api")
+    def test_candidate_id_zero_no_post(self, mock_api: object) -> None:
+        """Candidate ID is 0 → no POST (ID must be > 0)."""
+        list_zero_id = GitHubResponse(
+            status_code=200,
+            body=[{"name": "agent-federation-baseline-v1", "id": 0}],
+            error_message=None,
+        )
+        call_methods: list[str] = []
+
+        def side_effect(method: str, path: str, body: object = None, *, token: str | None = None) -> GitHubResponse:
+            call_methods.append(method)
+            if "/rulesets" in path and "includes_parents" in path:
+                return list_zero_id
+            return GitHubResponse(status_code=200, body={}, error_message=None)
+
+        mock_api.side_effect = side_effect
+        result = ensure_governance_baseline(
+            REPO,
+            GovernanceCheck(compliance=ComplianceStatus.NON_CONFORMANT, default_branch="main"),
+        )
+        assert result.action is None
+        assert "POST" not in call_methods
+
+    def test_approval_true_incompatible(self) -> None:
+        """required_approving_review_count is True → incompatible (bool is int!)."""
+        existing = {
+            **self._BASE,
+            "rules": [
+                {"type": "deletion"},
+                {"type": "non_fast_forward"},
+                {"type": "pull_request", "parameters": {"required_approving_review_count": True}},
+            ],
+        }
+        compatible, reason = _is_compatible(existing)
+        assert compatible is False
+        assert "review_count" in reason
+
+    def test_approval_false_incompatible(self) -> None:
+        """required_approving_review_count is False → incompatible."""
+        existing = {
+            **self._BASE,
+            "rules": [
+                {"type": "deletion"},
+                {"type": "non_fast_forward"},
+                {"type": "pull_request", "parameters": {"required_approving_review_count": False}},
+            ],
+        }
+        compatible, reason = _is_compatible(existing)
+        assert compatible is False
+        assert "review_count" in reason
+
+    def test_approval_zero_valid(self) -> None:
+        """required_approving_review_count is 0 → valid (exact)."""
+        compatible, reason = _is_compatible(self._BASE)
+        assert compatible is True
+        assert reason == "exact"
+
+    def test_approval_one_valid_and_stricter(self) -> None:
+        """required_approving_review_count is 1 → valid (stricter)."""
+        existing = {
+            **self._BASE,
+            "rules": [
+                {"type": "deletion"},
+                {"type": "non_fast_forward"},
+                {"type": "pull_request", "parameters": {"required_approving_review_count": 1}},
+            ],
+        }
+        compatible, reason = _is_compatible(existing)
+        assert compatible is True
+        assert reason == "stricter"
