@@ -6,9 +6,8 @@ variables and outputs a structured JSON status line.  Never prints
 secret values.
 
 Exit codes:
-  0 — remote relay can proceed (both secrets configured)
-  1 — remote relay skipped (one or both secrets missing)
-  2 — usage error
+  0 — status determined successfully (enabled or disabled)
+  2 — unexpected error
 
 Output (JSON on stdout):
   {"status": "REMOTE_ENABLED"}
@@ -32,7 +31,7 @@ def main() -> int:
             "reason": "FEDERATION_PAT not set",
         }, sys.stdout)
         print()
-        return 1
+        return 0
 
     if not node_key:
         json.dump({
@@ -40,7 +39,7 @@ def main() -> int:
             "reason": "NODE_PRIVATE_KEY not set",
         }, sys.stdout)
         print()
-        return 1
+        return 0
 
     json.dump({"status": "REMOTE_ENABLED"}, sys.stdout)
     print()
