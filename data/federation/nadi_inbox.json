@@ -1,29 +1,27 @@
 [
   {
-    "source": "ag_9dc31c715951c843",
+    "source": "ag_3310b9b3a356e672",
     "target": "agent-template",
     "operation": "heartbeat",
     "payload": {
-      "agent_id": "agent-world",
+      "agent_id": "agent-research",
       "health": 1.0,
-      "timestamp": 1784542194.715476,
+      "timestamp": 1784549899.3166814,
       "capabilities": [
-        "world-governance",
-        "federation-registry",
-        "role-assignment",
-        "authority-projection"
+        "research",
+        "federation_relay"
       ],
-      "repo": "kimeisele/agent-world",
+      "repo": "kimeisele/agent-research",
       "version": "0.1.0",
-      "node_id": "ag_9dc31c715951c843",
-      "public_key": "699653ae058a1cca32fbfcaaa52debeef7f6e378ed63a0bbd859c7ee3c77dfcd"
+      "node_id": "ag_3310b9b3a356e672",
+      "public_key": "176d871b9dcd73918872957db83cd46c1883059bb5fbc8c34b697104e36753c8"
     },
-    "timestamp": 1784542195.0489533,
+    "timestamp": 1784549899.5859585,
     "priority": 1,
     "correlation_id": "",
     "ttl_s": 900.0,
-    "id": "a6288a56-24a1-42b5-a266-9d7fb9ef4a7c",
-    "payload_hash": "27cb29cce3b9570c782844ff566e8343bbb1b13c293868dcc5cdda1e8862873f",
-    "signature": "v0cIwmpiHZgfUwKUTS0vsUc2s1EzWSfzxUm3MGc3xz49QJdVIQH9EBgXLacLwl4dUS0wkQhq7t/qMTs7aRUhCg=="
+    "id": "1eec7bcf-ee3a-4082-86cf-7f8575766273",
+    "payload_hash": "7daec00286bbef3b58a9d8d8fedeb14b3c63c9be249cb5eae9aeb17da617e7e9",
+    "signature": "ezyTEc5qBOstcSHBRpkYgN1S0uRrrcCNssDKu/5iZr+c6iWZt481AP4ZoTEsDbiVkCdDs6zFveTYxT+YxltEDg=="
   }
 ]
