@@ -7,15 +7,17 @@ Modes
 -----
 
 ``--once``
-    Local, mutation-free diagnostic cycle:
-    load peer, read outbox/inbox, report pending messages.
-    No hub pull, no hub push, no heartbeat emit, no remote access.
+    Strictly read-only local diagnostic.
+    Reads peer.json, outbox, and inbox via NadiTransport directly.
+    No NadiNode construction, no key generation, no file creation,
+    no heartbeat, no hub access, no mutations of any kind.
 
 ``--once --relay``
-    Exactly one real federation sync cycle including hub pull/push.
+    Exactly one real federation sync cycle with hub pull/push.
+    Requires a NadiNode (keys, signatures) and ``--relay`` flag.
 
-``--relay`` (with loop)
-    Continuous daemon loop with hub push/pull each cycle.
+``--relay``
+    Continuous daemon loop with heartbeat + hub pull/push each cycle.
 
 Usage:
     python scripts/nadi_daemon.py --once            # local diagnostic
@@ -25,6 +27,7 @@ Usage:
 
 import argparse
 import importlib.util
+import json
 import logging
 import sys
 from pathlib import Path
@@ -35,11 +38,71 @@ _PEER_PATH = REPO_ROOT / "data" / "federation" / "peer.json"
 log = logging.getLogger("nadi_daemon")
 
 
+# ── Path validation ─────────────────────────────────────────────────────────
+
+
+def _validate_nadi_paths(peer_path: Path) -> tuple[Path, list[str]]:
+    """Read *peer_path* and validate the NADI path contract.
+
+    Returns ``(federation_dir, [])`` on success.
+    Returns ``(None, errors)`` if validation fails.
+
+    The actual nadi-kit transport contract is::
+
+        federation_dir = peer_path.parent
+        outbox = federation_dir / "nadi_outbox.json"
+        inbox  = federation_dir / "nadi_inbox.json"
+
+    If the peer declares ``nadi.outbox`` / ``nadi.inbox``, those MUST
+    resolve to the exact same paths.
+    """
+    errors: list[str] = []
+    if not peer_path.exists():
+        errors.append(f"peer.json not found: {peer_path}")
+        return None, errors
+
+    try:
+        peer = json.loads(peer_path.read_text())
+    except json.JSONDecodeError as exc:
+        errors.append(f"peer.json is not valid JSON: {exc}")
+        return None, errors
+
+    federation_dir = peer_path.parent
+
+    # Repo root is two levels up:
+    # peer.json at <repo_root>/data/federation/peer.json
+    repo_root_from_peer = federation_dir.parent.parent
+
+    # Validate declarative nadi.outbox / nadi.inbox if present
+    for key, filename in [("outbox", "nadi_outbox.json"),
+                          ("inbox", "nadi_inbox.json")]:
+        declared = peer.get("nadi", {}).get(key)
+        if declared and isinstance(declared, str):
+            resolved = (repo_root_from_peer / declared).resolve()
+            actual = (federation_dir / filename).resolve()
+            if resolved != actual:
+                errors.append(
+                    f"nadi.{key} declares {declared} "
+                    f"(resolves to {resolved}), "
+                    f"but actual transport path is {actual}"
+                )
+
+    if errors:
+        return None, errors
+    return federation_dir, []
+
+
+# ── nadi-kit loader (for relay modes) ───────────────────────────────────────
+
+
 def _load_nadi_node():
     """Load a NadiNode from the canonical peer.json.
 
+    **WARNING:** This constructs a full NadiNode which generates keys
+    via NodeKeyStore.ensure_keys().  Only use for relay modes, NOT for
+    read-only diagnostics.
+
     Returns ``(node, None)`` on success, ``(None, exit_code)`` on failure.
-    Prints a clear install hint when nadi-kit is genuinely absent.
     """
     if importlib.util.find_spec("nadi_kit") is None:
         print(
@@ -54,17 +117,16 @@ def _load_nadi_node():
     except ImportError as exc:
         print(
             f"error: nadi-kit import failed ({exc}). "
-            f"A findable but broken module is not the same as a missing one.",
+            f"Module is findable but broken — not treated as absent.",
             file=sys.stderr,
         )
         return None, 1
 
-    if not _PEER_PATH.exists():
-        print(
-            f"ERROR: {_PEER_PATH} not found. "
-            f"Run scripts/setup_node.py first.",
-            file=sys.stderr,
-        )
+    # Validate paths before constructing the node (which creates keys)
+    fed_dir, errors = _validate_nadi_paths(_PEER_PATH)
+    if errors:
+        for e in errors:
+            print(f"error: {e}", file=sys.stderr)
         return None, 1
 
     try:
@@ -79,30 +141,36 @@ def _load_nadi_node():
     return node, 0
 
 
-def _handle_heartbeat(msg):
-    log.info("heartbeat from %s (health=%.2f)", msg.source,
-             msg.payload.get("health", 0))
+# ── Local diagnostic (read-only, no NadiNode) ───────────────────────────────
 
 
-def _handle_default(msg):
-    log.info("received op=%s from %s", msg.operation, msg.source)
+def _do_local_diagnostic() -> int:
+    """Read-only local diagnostic — no NadiNode, no keys, no mutations."""
+    # Validate paths (reads peer.json, no side effects)
+    fed_dir, errors = _validate_nadi_paths(_PEER_PATH)
+    if errors:
+        for e in errors:
+            print(f"error: {e}", file=sys.stderr)
+        return 1
 
+    # Read peer.json for identity info
+    peer = json.loads(_PEER_PATH.read_text())
+    city_id = peer.get("identity", {}).get("city_id", "unknown")
 
-def _print_local_diagnostic(node) -> int:
-    """Read-only local diagnostic — no mutations, no remote access.
+    # Use NadiTransport directly for reading (creates no files, no keys)
+    from nadi_kit import NadiTransport  # noqa: E402
+    transport = NadiTransport(str(fed_dir))
 
-    Returns 0 on success, 1 if any diagnostic check fails.
-    """
     try:
-        outbox = node.transport.read_outbox()
-        inbox = node.transport.read_inbox()
+        outbox = transport.read_outbox()
+        inbox = transport.read_inbox()
     except Exception as exc:
         log.error("transport read failed: %s", exc)
         return 1
 
-    print(f"Node:  {node.agent_id}")
+    print(f"Node:  {city_id}")
     print(f"Peer:  {_PEER_PATH}")
-    print(f"Dir:   {node.transport.federation_dir}")
+    print(f"Dir:   {fed_dir}")
     print(f"Outbox: {len(outbox)} pending message(s)")
     for msg in outbox[:5]:
         print(f"  [{msg.id[:8]}…] → {msg.target} ({msg.operation}) "
@@ -118,12 +186,20 @@ def _print_local_diagnostic(node) -> int:
     return 0
 
 
-def _run_relay_cycle(node, args, cycle_count) -> int:
-    """Execute one full relay cycle: heartbeat → sync.
+# ── Relay modes (requires NadiNode) ─────────────────────────────────────────
 
-    Returns 0 on success, 1 on sync failure.
-    """
-    # Heartbeat (HeadAgent or plain)
+
+def _handle_heartbeat(msg):
+    log.info("heartbeat from %s (health=%.2f)", msg.source,
+             msg.payload.get("health", 0))
+
+
+def _handle_default(msg):
+    log.info("received op=%s from %s", msg.operation, msg.source)
+
+
+def _run_relay_cycle(node, args) -> int:
+    """Execute one full relay cycle: heartbeat → sync.  Returns 0 on success."""
     if args.head_agent:
         try:
             import importlib as _il
@@ -152,7 +228,53 @@ def _run_relay_cycle(node, args, cycle_count) -> int:
     return 0
 
 
-def main():
+def _execute_mode(args, node_loader=_load_nadi_node) -> int:
+    """Execute the daemon mode described by *args*.
+
+    *node_loader* is a callable returning ``(node, exit_code)``.
+    Injected for testability.
+    """
+    # ── --once without --relay: read-only local diagnostic ──
+    if args.once and not args.relay:
+        return _do_local_diagnostic()
+
+    # ── Relay modes require NadiNode ──
+    if args.relay:
+        node, exit_code = node_loader()
+        if node is None:
+            return exit_code
+
+        node.on("heartbeat", _handle_heartbeat)
+        node.on("*", _handle_default)
+
+        print(
+            "\n  ⚠  REMOTE RELAY ENABLED\n"
+            "  Hub: kimeisele/steward-federation\n"
+        )
+        log.info("relay daemon started for %s", node.agent_id)
+
+        if args.once:
+            return _run_relay_cycle(node, args)
+
+        # Continuous loop
+        cycle = 0
+        import time
+        while True:
+            cycle += 1
+            log.info("=== relay cycle %d ===", cycle)
+            if _run_relay_cycle(node, args) != 0:
+                log.warning("relay cycle %d had errors", cycle)
+            time.sleep(args.interval)
+
+    # ── Neither --once nor --relay: show help ──
+    return 1
+
+
+# ── CLI ─────────────────────────────────────────────────────────────────────
+
+
+def main(argv=None, *, node_loader=_load_nadi_node) -> int:
+    """Entry point.  *argv* and *node_loader* are injectable for tests."""
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s %(name)s %(message)s",
@@ -168,44 +290,15 @@ def main():
                         help="Health score to report")
     parser.add_argument("--head-agent", type=str, default=None,
                         help="Dotted path to a HeadAgent subclass")
-    args = parser.parse_args()
+    if argv is None:
+        argv = sys.argv[1:]
+    args = parser.parse_args(argv)
 
-    node, exit_code = _load_nadi_node()
-    if node is None:
-        return exit_code
+    if not args.once and not args.relay:
+        parser.print_help()
+        return 1
 
-    node.on("heartbeat", _handle_heartbeat)
-    node.on("*", _handle_default)
-
-    # ── --once without --relay: local diagnostic ──
-    if args.once and not args.relay:
-        log.info("local diagnostic for %s", node.agent_id)
-        return _print_local_diagnostic(node)
-
-    # ── Relay modes ──
-    if args.relay:
-        print(
-            "\n  ⚠  REMOTE RELAY ENABLED\n"
-            "  Hub: kimeisele/steward-federation\n"
-        )
-        log.info("relay daemon started for %s", node.agent_id)
-
-        if args.once:
-            return _run_relay_cycle(node, args, 0)
-
-        # Continuous loop
-        cycle = 0
-        import time
-        while True:
-            cycle += 1
-            log.info("=== relay cycle %d ===", cycle)
-            if _run_relay_cycle(node, args, cycle) != 0:
-                log.warning("relay cycle %d had errors", cycle)
-            time.sleep(args.interval)
-
-    # ── Neither --once nor --relay: show help ──
-    parser.print_help()
-    return 1
+    return _execute_mode(args, node_loader=node_loader)
 
 
 if __name__ == "__main__":

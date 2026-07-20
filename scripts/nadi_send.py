@@ -30,6 +30,57 @@ _FEDERATION_INSTALL_HINT = (
 )
 
 
+def _validate_nadi_paths(peer_path: Path) -> tuple[Path | None, list[str]]:
+    """Read *peer_path* and validate the NADI path contract.
+
+    Returns ``(federation_dir, [])`` on success.
+    Returns ``(None, errors)`` if validation fails.
+
+    The actual nadi-kit transport contract is::
+
+        federation_dir = peer_path.parent
+        outbox = federation_dir / "nadi_outbox.json"
+        inbox  = federation_dir / "nadi_inbox.json"
+
+    If the peer declares ``nadi.outbox`` / ``nadi.inbox``, those MUST
+    resolve to the exact same paths.
+    """
+    errors: list[str] = []
+    if not peer_path.exists():
+        errors.append(f"peer.json not found: {peer_path}")
+        return None, errors
+
+    try:
+        peer = json.loads(peer_path.read_text())
+    except json.JSONDecodeError as exc:
+        errors.append(f"peer.json is not valid JSON: {exc}")
+        return None, errors
+
+    federation_dir = peer_path.parent
+    # Repo root is two levels up from federation_dir:
+    # peer.json at <repo_root>/data/federation/peer.json
+    # → federation_dir = <repo_root>/data/federation
+    # → federation_dir.parent.parent = <repo_root>
+    repo_root_from_peer = federation_dir.parent.parent
+
+    for key, filename in [("outbox", "nadi_outbox.json"),
+                          ("inbox", "nadi_inbox.json")]:
+        declared = peer.get("nadi", {}).get(key)
+        if declared and isinstance(declared, str):
+            resolved = (repo_root_from_peer / declared).resolve()
+            actual = (federation_dir / filename).resolve()
+            if resolved != actual:
+                errors.append(
+                    f"nadi.{key} declares {declared} "
+                    f"(resolves to {resolved}), "
+                    f"but actual transport path is {actual}"
+                )
+
+    if errors:
+        return None, errors
+    return federation_dir, []
+
+
 def _load_nadi_node():
     """Return a :class:`NadiNode` loaded from the canonical peer.json.
 
@@ -48,9 +99,16 @@ def _load_nadi_node():
     except ImportError as exc:
         print(
             f"error: nadi-kit import failed ({exc}). "
-            f"A findable but broken module is not the same as a missing one.",
+            f"Module is findable but broken — not treated as absent.",
             file=sys.stderr,
         )
+        return None, 1
+
+    # Validate paths before constructing the node (which creates keys)
+    _, errors = _validate_nadi_paths(_PEER_PATH)
+    if errors:
+        for e in errors:
+            print(f"error: {e}", file=sys.stderr)
         return None, 1
 
     if not _PEER_PATH.exists():
@@ -85,6 +143,13 @@ def cmd_send(args: argparse.Namespace) -> int:
             payload = json.loads(args.payload)
         except json.JSONDecodeError:
             print("error: --payload must be valid JSON", file=sys.stderr)
+            return 1
+        if not isinstance(payload, dict):
+            print(
+                "error: --payload must be a JSON object (dict/mapping), "
+                f"got {type(payload).__name__}",
+                file=sys.stderr,
+            )
             return 1
 
     node, exit_code = _load_nadi_node()
