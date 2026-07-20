@@ -652,12 +652,20 @@ class TestCIInvalidKeyVerb:
             keys_path = fed / ".node_keys.json"
             assert not keys_path.exists()
 
+            # Strip PYTEST_CURRENT_TEST — nadi-kit suppresses CI fatal
+            # error when running under pytest.
+            clean_env = {
+                k: v for k, v in os.environ.items()
+                if k not in ("PYTEST_CURRENT_TEST",)
+            }
+            clean_env["GITHUB_ACTIONS"] = "true"
+            clean_env["NODE_PRIVATE_KEY"] = "!!!invalid-key!!!"
+
             result = subprocess.run(
                 [sys.executable, "-c", """
 import os, sys
 from pathlib import Path
-os.environ["GITHUB_ACTIONS"] = "true"
-os.environ["NODE_PRIVATE_KEY"] = "!!!invalid-key!!!"
+# GITHUB_ACTIONS and NODE_PRIVATE_KEY come from the environment
 from nadi_kit import NadiNode
 try:
     node = NadiNode.from_peer_json(Path(sys.argv[1]))
@@ -668,23 +676,93 @@ except Exception as exc:
     sys.exit(1)
 """, str(fed / "peer.json")],
                 capture_output=True, text=True,
-                env={**os.environ, "GITHUB_ACTIONS": "true",
-                     "NODE_PRIVATE_KEY": "!!!invalid-key!!!"},
+                env=clean_env,
                 cwd=str(tdp),
             )
-            # nadi-kit at pinned commit handles unrecognized key format
-            # by logging a warning and generating a fresh key (exit 0).
-            # The key value is never leaked. The guard correctly
-            # classifies non-empty as REMOTE_ENABLED.
-            # In local development and CI, a new key is auto-generated.
+            # Pinned nadi-kit with GITHUB_ACTIONS=true and invalid key:
+            # Raises "No usable node identity" — fail closed.
+            # No ephemeral keypair generation, no .node_keys.json created.
+            assert result.returncode != 0, (
+                f"invalid key in CI must fail. "
+                f"stdout={result.stdout} stderr={result.stderr}"
+            )
+            assert "No usable node identity" in result.stderr, (
+                "must report identity failure"
+            )
             assert "!!!invalid-key!!!" not in result.stdout, (
-                "secret must not appear in stdout"
+                "secret must not leak to stdout"
             )
             assert "!!!invalid-key!!!" not in result.stderr, (
-                "secret must not appear in stderr"
+                "secret must not leak to stderr"
             )
-            # Warning about format was logged
-            assert "could not be parsed" in result.stderr.lower() or \
-                   "unrecognised" in result.stderr.lower(), (
-                "warning about key format expected"
+            assert not keys_path.exists(), (
+                ".node_keys.json must not be created with invalid CI key"
+            )
+
+
+class TestCIValidKey:
+    """Valid Ed25519 key in CI loads correctly, no key file written."""
+
+    def test_valid_ed25519_key_loads_in_ci(self):
+        if _NADI_KIT is None:
+            pytest.skip("nadi-kit not installed")
+        import tempfile
+        import json as _json
+
+        # Generate a valid Ed25519 test key
+        from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+        from cryptography.hazmat.primitives import serialization
+        test_key = Ed25519PrivateKey.generate()
+        test_key_pem = test_key.private_bytes(
+            encoding=serialization.Encoding.PEM,
+            format=serialization.PrivateFormat.PKCS8,
+            encryption_algorithm=serialization.NoEncryption(),
+        ).decode("utf-8")
+
+        with tempfile.TemporaryDirectory() as td:
+            tdp = Path(td)
+            fed = tdp / "data" / "federation"
+            fed.mkdir(parents=True)
+            peer = {
+                "identity": {"city_id": "ci-valid", "slug": "ci-valid",
+                             "repo": "org/ci-valid", "public_key": ""},
+                "endpoint": {"city_id": "ci-valid", "transport": "filesystem",
+                             "location": str(fed)},
+                "capabilities": [],
+            }
+            (fed / "peer.json").write_text(_json.dumps(peer))
+            keys_path = fed / ".node_keys.json"
+            assert not keys_path.exists()
+
+            clean_env = {
+                k: v for k, v in os.environ.items()
+                if k not in ("PYTEST_CURRENT_TEST",)
+            }
+            clean_env["GITHUB_ACTIONS"] = "true"
+            clean_env["NODE_PRIVATE_KEY"] = test_key_pem
+
+            result = subprocess.run(
+                [sys.executable, "-c", """
+import os, sys
+from pathlib import Path
+# GITHUB_ACTIONS and NODE_PRIVATE_KEY from environment
+from nadi_kit import NadiNode
+try:
+    node = NadiNode.from_peer_json(Path(sys.argv[1]))
+    msgs = node.emit("test", {}, target="dest")
+    print(f"OK agent_id={node.agent_id} source={msgs[0].source}")
+except Exception as exc:
+    print(f"FAIL: {exc}", file=sys.stderr)
+    sys.exit(1)
+""", str(fed / "peer.json")],
+                capture_output=True, text=True,
+                env=clean_env,
+                cwd=str(tdp),
+            )
+            assert result.returncode == 0, f"valid key must succeed: {result.stderr}"
+            assert "OK agent_id=" in result.stdout
+            assert test_key_pem not in result.stdout, "key must not leak"
+            assert test_key_pem not in result.stderr, "key must not leak"
+            assert not keys_path.exists(), (
+                ".node_keys.json must not be created in CI"
             )
