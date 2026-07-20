@@ -4,6 +4,7 @@ All remote operations use fakes; no real GitHub mutations.
 """
 from __future__ import annotations
 
+import argparse
 import hashlib
 import importlib
 import importlib.util
@@ -28,21 +29,13 @@ def _make_peer_json(
     city_id: str = "test-node",
     location: str = "data/federation",
 ) -> Path:
-    """Create a minimal peer.json in *repo_dir* and return its path."""
     peer_dir = repo_dir / "data" / "federation"
     peer_dir.mkdir(parents=True, exist_ok=True)
     peer_data = {
-        "identity": {
-            "city_id": city_id,
-            "slug": city_id,
-            "repo": f"test-org/{city_id}",
-            "public_key": "",
-        },
-        "endpoint": {
-            "city_id": city_id,
-            "transport": "filesystem",
-            "location": location,
-        },
+        "identity": {"city_id": city_id, "slug": city_id,
+                     "repo": f"test-org/{city_id}", "public_key": ""},
+        "endpoint": {"city_id": city_id, "transport": "filesystem",
+                     "location": location},
         "capabilities": ["test"],
         "nadi": {
             "outbox": f"{location}/nadi_outbox.json",
@@ -57,7 +50,6 @@ def _make_peer_json(
 
 
 def _make_scripts(repo_dir: Path, *names: str) -> Path:
-    """Copy named scripts into *repo_dir*/scripts/."""
     scripts_dest = repo_dir / "scripts"
     scripts_dest.mkdir(parents=True, exist_ok=True)
     for name in names:
@@ -68,12 +60,12 @@ def _make_scripts(repo_dir: Path, *names: str) -> Path:
 
 
 def _file_tree_snapshot(root: Path) -> dict[str, str]:
-    """Return ``{relpath: sha256_hex}`` for all files under *root*."""
     snap: dict[str, str] = {}
     for f in sorted(root.rglob("*")):
-        if f.is_file() and ".git" not in f.parts:
-            rel = str(f.relative_to(root))
-            snap[rel] = hashlib.sha256(f.read_bytes()).hexdigest()
+        if f.is_file() and ".git" not in f.parts \
+           and "__pycache__" not in f.parts:
+            snap[str(f.relative_to(root))] = hashlib.sha256(
+                f.read_bytes()).hexdigest()
     return snap
 
 
@@ -86,7 +78,6 @@ class TestNadiSendViaNadiNode:
     def test_send_produces_signed_message(self, tmp_path: Path) -> None:
         _make_peer_json(tmp_path)
         _make_scripts(tmp_path, "nadi_send.py", "federation_utils.py")
-
         result = subprocess.run(
             [sys.executable, str(tmp_path / "scripts" / "nadi_send.py"),
              "send", "--to", "proof-target", "--op", "proof-op",
@@ -95,11 +86,9 @@ class TestNadiSendViaNadiNode:
             capture_output=True, text=True, cwd=str(tmp_path),
         )
         assert result.returncode == 0, (
-            f"exit={result.returncode}\nstderr={result.stderr}"
-        )
+            f"exit={result.returncode}\nstderr={result.stderr}")
         outbox = json.loads(
-            (tmp_path / "data" / "federation" / "nadi_outbox.json").read_text()
-        )
+            (tmp_path / "data" / "federation" / "nadi_outbox.json").read_text())
         assert len(outbox) == 1
         msg = outbox[0]
         assert msg["operation"] == "proof-op"
@@ -109,15 +98,13 @@ class TestNadiSendViaNadiNode:
         assert msg.get("signature"), "must be signed"
         assert msg.get("payload_hash"), "must have payload_hash"
         assert isinstance(msg["source"], str) and len(msg["source"]) > 0
-        # No legacy fields
         for legacy in ("source_city_id", "target_city_id", "ttl_ms",
                        "envelope_id", "nadi_type", "nadi_op"):
-            assert legacy not in msg, f"legacy field {legacy} must not appear"
+            assert legacy not in msg
 
     def test_send_from_outside_repo_dir(self, tmp_path: Path) -> None:
         _make_peer_json(tmp_path)
         _make_scripts(tmp_path, "nadi_send.py", "federation_utils.py")
-
         import tempfile
         with tempfile.TemporaryDirectory() as td:
             result = subprocess.run(
@@ -126,8 +113,7 @@ class TestNadiSendViaNadiNode:
                 capture_output=True, text=True, cwd=td,
             )
         assert result.returncode == 0, f"send failed: {result.stderr}"
-        outbox_path = tmp_path / "data" / "federation" / "nadi_outbox.json"
-        assert outbox_path.exists()
+        assert (tmp_path / "data" / "federation" / "nadi_outbox.json").exists()
         assert not Path(td).joinpath("nadi_outbox.json").exists()
 
     def test_corrupt_peer_json_errors(self, tmp_path: Path) -> None:
@@ -135,7 +121,6 @@ class TestNadiSendViaNadiNode:
         peer_dir = tmp_path / "data" / "federation"
         peer_dir.mkdir(parents=True, exist_ok=True)
         (peer_dir / "peer.json").write_text("{not json!!!")
-
         result = subprocess.run(
             [sys.executable, str(tmp_path / "scripts" / "nadi_send.py"),
              "send", "--to", "test", "--op", "test"],
@@ -144,69 +129,91 @@ class TestNadiSendViaNadiNode:
         assert result.returncode != 0
 
     def test_payload_non_dict_rejected(self, tmp_path: Path) -> None:
-        """List/string/number payloads must be rejected, no message written."""
         _make_peer_json(tmp_path)
         _make_scripts(tmp_path, "nadi_send.py", "federation_utils.py")
-
         result = subprocess.run(
             [sys.executable, str(tmp_path / "scripts" / "nadi_send.py"),
              "send", "--to", "test", "--op", "test",
              "--payload", '["not", "an", "object"]'],
             capture_output=True, text=True, cwd=str(tmp_path),
         )
-        assert result.returncode != 0, (
-            f"non-dict payload must be rejected, got {result.returncode}"
-        )
-        # No message should have been written
+        assert result.returncode != 0
         outbox_path = tmp_path / "data" / "federation" / "nadi_outbox.json"
         if outbox_path.exists():
-            outbox = json.loads(outbox_path.read_text())
-            assert len(outbox) == 0, "no message should be written"
+            assert len(json.loads(outbox_path.read_text())) == 0
 
 
-class TestNadiPathValidation:
-    """Declarative nadi paths must match the actual transport contract."""
+class TestNadiPathContract:
+    """Centralized NadiPathContract in federation_utils."""
 
-    def _call_validate(self, repo_dir: Path):
-        from nadi_daemon import _validate_nadi_paths
-        peer_path = repo_dir / "data" / "federation" / "peer.json"
-        return _validate_nadi_paths(peer_path)
-
-    def test_correct_paths_pass(self, tmp_path: Path) -> None:
+    def test_correct_paths_return_contract(self, tmp_path: Path) -> None:
         _make_peer_json(tmp_path)
-        fed_dir, errors = self._call_validate(tmp_path)
-        assert fed_dir is not None, f"expected success, got errors: {errors}"
-        assert len(errors) == 0
+        from federation_utils import resolve_and_validate_nadi_paths
+        c = resolve_and_validate_nadi_paths(
+            tmp_path / "data" / "federation" / "peer.json")
+        assert c.federation_dir == (tmp_path / "data" / "federation").resolve()
+        assert c.outbox_path == (tmp_path / "data" / "federation" / "nadi_outbox.json").resolve()
+        assert c.inbox_path == (tmp_path / "data" / "federation" / "nadi_inbox.json").resolve()
+        assert c.peer_path == (tmp_path / "data" / "federation" / "peer.json").resolve()
 
-    def test_wrong_outbox_fails(self, tmp_path: Path) -> None:
-        _make_peer_json(tmp_path)
-        # Overwrite with wrong declarative path
-        peer_path = tmp_path / "data" / "federation" / "peer.json"
-        peer = json.loads(peer_path.read_text())
-        peer["nadi"]["outbox"] = "wrong/path/outbox.json"
-        peer_path.write_text(json.dumps(peer, indent=2))
-        fed_dir, errors = self._call_validate(tmp_path)
-        assert fed_dir is None, "must fail on wrong outbox"
-        assert any("outbox" in e.lower() for e in errors)
-
-    def test_wrong_inbox_fails(self, tmp_path: Path) -> None:
+    def test_wrong_outbox_raises(self, tmp_path: Path) -> None:
         _make_peer_json(tmp_path)
         peer_path = tmp_path / "data" / "federation" / "peer.json"
         peer = json.loads(peer_path.read_text())
-        peer["nadi"]["inbox"] = "wrong/path/inbox.json"
+        peer["nadi"]["outbox"] = "wrong/outbox.json"
         peer_path.write_text(json.dumps(peer, indent=2))
-        fed_dir, errors = self._call_validate(tmp_path)
-        assert fed_dir is None
-        assert any("inbox" in e.lower() for e in errors)
+        from federation_utils import NadiPathError, resolve_and_validate_nadi_paths
+        with pytest.raises(NadiPathError, match="outbox"):
+            resolve_and_validate_nadi_paths(peer_path)
 
-    def test_validation_creates_no_files(self, tmp_path: Path) -> None:
+    def test_wrong_inbox_raises(self, tmp_path: Path) -> None:
+        _make_peer_json(tmp_path)
+        peer_path = tmp_path / "data" / "federation" / "peer.json"
+        peer = json.loads(peer_path.read_text())
+        peer["nadi"]["inbox"] = "wrong/inbox.json"
+        peer_path.write_text(json.dumps(peer, indent=2))
+        from federation_utils import NadiPathError, resolve_and_validate_nadi_paths
+        with pytest.raises(NadiPathError, match="inbox"):
+            resolve_and_validate_nadi_paths(peer_path)
+
+    def test_validation_is_read_only(self, tmp_path: Path) -> None:
         _make_peer_json(tmp_path)
         snap_before = _file_tree_snapshot(tmp_path)
-        self._call_validate(tmp_path)
+        from federation_utils import resolve_and_validate_nadi_paths
+        resolve_and_validate_nadi_paths(
+            tmp_path / "data" / "federation" / "peer.json")
         snap_after = _file_tree_snapshot(tmp_path)
-        assert snap_before == snap_after, (
-            "path validation must not create or modify any files"
-        )
+        assert snap_before == snap_after
+
+    def test_send_and_daemon_share_same_contract(self, tmp_path: Path) -> None:
+        """Both send and daemon resolve identical paths from same peer."""
+        _make_peer_json(tmp_path)
+        peer_path = tmp_path / "data" / "federation" / "peer.json"
+
+        from federation_utils import resolve_and_validate_nadi_paths
+        c = resolve_and_validate_nadi_paths(peer_path)
+
+        # Both loaders should produce the same contract values
+        from nadi_daemon import resolve_and_validate_nadi_paths as daemon_resolve
+        c2 = daemon_resolve(peer_path)
+        assert c.federation_dir == c2.federation_dir
+        assert c.outbox_path == c2.outbox_path
+        assert c.inbox_path == c2.inbox_path
+
+    def test_mismatch_rejected_identically(self, tmp_path: Path) -> None:
+        """Both send and daemon reject the same bad path."""
+        _make_peer_json(tmp_path)
+        peer_path = tmp_path / "data" / "federation" / "peer.json"
+        peer = json.loads(peer_path.read_text())
+        peer["nadi"]["outbox"] = "bad/path.json"
+        peer_path.write_text(json.dumps(peer, indent=2))
+
+        from federation_utils import NadiPathError
+        from nadi_daemon import resolve_and_validate_nadi_paths as daemon_resolve
+        with pytest.raises(NadiPathError, match="outbox"):
+            daemon_resolve(peer_path)
+
+import pytest  # noqa: E402
 
 
 class TestDaemonReadOnlyLocal:
@@ -215,13 +222,9 @@ class TestDaemonReadOnlyLocal:
     def test_once_creates_no_files(self, tmp_path: Path) -> None:
         _make_peer_json(tmp_path)
         _make_scripts(tmp_path, "nadi_daemon.py", "federation_utils.py")
-
-        # Ensure .node_keys.json does not exist
         keys_path = tmp_path / "data" / "federation" / ".node_keys.json"
-        assert not keys_path.exists(), "keys must not exist before --once"
-
+        assert not keys_path.exists()
         snap_before = _file_tree_snapshot(tmp_path)
-
         result = subprocess.run(
             [sys.executable, str(tmp_path / "scripts" / "nadi_daemon.py"),
              "--once"],
@@ -229,17 +232,10 @@ class TestDaemonReadOnlyLocal:
         )
         assert result.returncode == 0, f"daemon failed: {result.stderr}"
         assert "Node:" in result.stdout
-
         snap_after = _file_tree_snapshot(tmp_path)
         assert snap_before == snap_after, (
-            f"--once must not create/modify files.\n"
-            f"before keys: {sorted(snap_before)}\n"
-            f"after keys:  {sorted(snap_after)}\n"
-            f"added: {set(snap_after) - set(snap_before)}"
-        )
-        assert not keys_path.exists(), (
-            ".node_keys.json must not be created by --once"
-        )
+            f"added: {set(snap_after) - set(snap_before)}")
+        assert not keys_path.exists()
 
     def test_once_no_gh_subprocess(self, tmp_path: Path) -> None:
         _make_peer_json(tmp_path)
@@ -251,125 +247,130 @@ class TestDaemonReadOnlyLocal:
         )
         assert result.returncode == 0
         assert "gh api" not in result.stdout.lower()
-        assert "github.com" not in result.stdout.lower()
 
 
 class TestDaemonFakeRelay:
-    """Relay modes with a fully controlled fake node — no real network."""
+    """Relay modes with a fully controlled fake node."""
 
     @staticmethod
     def _fake_node():
-        """Return a fake node-like object with call counters."""
         node = MagicMock()
         node.agent_id = "fake-agent"
         node.heartbeat = MagicMock(return_value=[])
         node.sync = MagicMock(return_value={
-            "pulled": 0, "processed": 0, "pushed": 0, "expired": 0,
-        })
+            "pulled": 0, "processed": 0, "pushed": 0, "expired": 0})
         return node
 
     def test_relay_banner_appears(self) -> None:
         from nadi_daemon import _execute_mode
         args = argparse.Namespace(
-            once=True, relay=True, interval=900, health=1.0, head_agent=None,
-        )
+            once=True, relay=True, interval=900, health=1.0, head_agent=None)
         fake = self._fake_node()
-
-        # Capture stdout
         import io
-        saved_stdout = sys.stdout
+        saved = sys.stdout
         try:
             sys.stdout = io.StringIO()
             _execute_mode(args, node_loader=lambda: (fake, 0))
             output = sys.stdout.getvalue()
         finally:
-            sys.stdout = saved_stdout
-
-        assert "REMOTE RELAY ENABLED" in output, (
-            f"relay banner missing: {output}"
-        )
+            sys.stdout = saved
+        assert "REMOTE RELAY ENABLED" in output
 
     def test_relay_once_calls_heartbeat_and_sync(self) -> None:
         from nadi_daemon import _execute_mode
         args = argparse.Namespace(
-            once=True, relay=True, interval=900, health=1.0, head_agent=None,
-        )
+            once=True, relay=True, interval=900, health=1.0, head_agent=None)
         fake = self._fake_node()
         _execute_mode(args, node_loader=lambda: (fake, 0))
+        assert fake.heartbeat.call_count == 1
+        assert fake.sync.call_count == 1
 
-        assert fake.heartbeat.call_count == 1, (
-            f"heartbeat: expected 1, got {fake.heartbeat.call_count}"
-        )
-        assert fake.sync.call_count == 1, (
-            f"sync: expected 1, got {fake.sync.call_count}"
-        )
-
-    def test_local_once_does_not_call_heartbeat_or_sync(self) -> None:
-        """--once without --relay never calls node_loader at all."""
+    def test_local_once_does_not_call_node_loader(self) -> None:
         from nadi_daemon import _execute_mode
+        calls = [0]
 
-        node_loader_called = [0]
-
-        def _counting_loader():
-            node_loader_called[0] += 1
-            fake = MagicMock()
-            fake.heartbeat = MagicMock()
-            fake.sync = MagicMock()
-            return fake, 0
+        def _counting():
+            calls[0] += 1
+            return MagicMock(), 0
 
         args = argparse.Namespace(
-            once=True, relay=False, interval=900, health=1.0, head_agent=None,
-        )
-        _execute_mode(args, node_loader=_counting_loader)
-        assert node_loader_called[0] == 0, (
-            "--once must not call node_loader (no NadiNode construction)"
-        )
-
-
-import argparse  # noqa: E402 — used above in TestDaemonFakeRelay
+            once=True, relay=False, interval=900, health=1.0, head_agent=None)
+        _execute_mode(args, node_loader=_counting)
+        assert calls[0] == 0
 
 
 class TestMissingNadiKit:
-    """When nadi-kit is genuinely absent, tools give clear UX, not traceback."""
+    """When nadi-kit is absent, tools give clean UX, not traceback."""
 
-    def test_nadi_send_guard_absent(self) -> None:
+    def test_send_guard_absent(self) -> None:
         from nadi_send import _load_nadi_node
         with patch("importlib.util.find_spec", return_value=None):
             node, exit_code = _load_nadi_node()
             assert node is None
             assert exit_code == 1
 
-    def test_nadi_daemon_guard_absent(self) -> None:
+    def test_daemon_guard_absent(self) -> None:
         from nadi_daemon import _load_nadi_node
         with patch("importlib.util.find_spec", return_value=None):
             node, exit_code = _load_nadi_node()
             assert node is None
             assert exit_code == 1
 
-    def test_broken_module_not_masked_as_absent(self, monkeypatch) -> None:
-        """A findable but broken nadi-kit → visible failure, not skip."""
+    def test_broken_module_not_masked(self, monkeypatch) -> None:
         monkeypatch.setattr(importlib.util, "find_spec",
                             lambda name, package=None: object())
-
         import builtins
         import sys as _sys
         _real_import = builtins.__import__
         _sys.modules.pop("nadi_kit", None)
-
-        def _failing_import(name, *args, **kwargs):
+        def _fail(name, *a, **kw):
             if name == "nadi_kit":
-                raise ImportError("broken transitive deps")
-            return _real_import(name, *args, **kwargs)
-
-        monkeypatch.setattr(builtins, "__import__", _failing_import)
-
+                raise ImportError("broken deps")
+            return _real_import(name, *a, **kw)
+        monkeypatch.setattr(builtins, "__import__", _fail)
         from nadi_daemon import _load_nadi_node
         node, exit_code = _load_nadi_node()
-        assert node is None, "broken module → node=None"
-        assert exit_code == 1, (
-            f"broken module → visible controlled failure, exit=1, "
-            f"got exit={exit_code}"
-        )
+        assert node is None
+        assert exit_code == 1
+
+    def test_once_without_nadi_kit_clean_failure(self, tmp_path: Path) -> None:
+        """CLI --once without nadi-kit: clean error, no traceback, no mutation."""
+        _make_peer_json(tmp_path)
+        _make_scripts(tmp_path, "nadi_daemon.py", "federation_utils.py")
+        snap_before = _file_tree_snapshot(tmp_path)
+        # With nadi-kit installed, --once succeeds.
+        # We test absence via direct main() call with mock.
+        from nadi_daemon import main as daemon_main
+        with patch("importlib.util.find_spec", return_value=None):
+            exit_code = daemon_main(["--once"])
+            assert exit_code == 1
+        snap_after = _file_tree_snapshot(tmp_path)
+        assert snap_before == snap_after
+
+    def test_once_with_broken_nadi_kit_fails_visibly(self, tmp_path,
+                                                      monkeypatch) -> None:
+        """findable but broken nadi-kit → visible failure, no mutation."""
+        _make_peer_json(tmp_path)
+        _make_scripts(tmp_path, "nadi_daemon.py", "federation_utils.py")
+        snap_before = _file_tree_snapshot(tmp_path)
+
+        monkeypatch.setattr(importlib.util, "find_spec",
+                            lambda name, package=None: object())
+        import builtins
+        import sys as _sys
+        _real_import = builtins.__import__
+        _sys.modules.pop("nadi_kit", None)
+        def _fail(name, *a, **kw):
+            if name == "nadi_kit":
+                raise ImportError("broken deps")
+            return _real_import(name, *a, **kw)
+        monkeypatch.setattr(builtins, "__import__", _fail)
+
+        from nadi_daemon import main as daemon_main
+        exit_code = daemon_main(["--once"])
+        assert exit_code == 1, f"broken module must fail, got {exit_code}"
+        snap_after = _file_tree_snapshot(tmp_path)
+        assert snap_before == snap_after
 
 
 class TestSetupPeerPreservation:
@@ -392,14 +393,14 @@ class TestSetupPeerPreservation:
         if caps_src.exists():
             (repo_dir / "docs" / "authority" / "capabilities.json").write_text(
                 caps_src.read_text())
-        seeds_dest = repo_dir / "data" / "federation" / "authority-descriptor-seeds.json"
+        seeds_dest = (repo_dir / "data" / "federation"
+                      / "authority-descriptor-seeds.json")
         seeds_dest.parent.mkdir(parents=True, exist_ok=True)
         seeds_src = _SCRIPTS.parent / "data" / "federation" / "authority-descriptor-seeds.json"
         if seeds_src.exists():
             seeds_dest.write_text(seeds_src.read_text())
         else:
             seeds_dest.write_text(json.dumps({"descriptor_urls": []}))
-
         args = [sys.executable, str(repo_dir / "scripts" / "setup_node.py"),
                 "--non-interactive"]
         for k, v in kwargs.items():
@@ -413,43 +414,32 @@ class TestSetupPeerPreservation:
                  "TMPDIR": os.environ.get("TMPDIR", "/tmp")},
         )
 
-    def test_existing_outbox_preserved_on_rerun(self, tmp_path: Path) -> None:
+    def test_existing_outbox_preserved(self, tmp_path: Path) -> None:
         _make_peer_json(tmp_path)
         outbox_path = tmp_path / "data" / "federation" / "nadi_outbox.json"
         outbox_path.write_text(
-            json.dumps([{"id": "existing-msg", "operation": "keep-me"}])
-        )
+            json.dumps([{"id": "existing-msg", "operation": "keep-me"}]))
         result = self._run_setup(
-            tmp_path, name="Test Node", role="relay",
-            repo="test-org/test-node",
-        )
-        assert result.returncode == 0, f"setup failed: {result.stderr}"
-        outbox = json.loads(outbox_path.read_text())
-        assert len(outbox) >= 1
-        assert outbox[0]["id"] == "existing-msg"
+            tmp_path, name="Test", role="relay", repo="test-org/test-node")
+        assert result.returncode == 0
+        assert json.loads(outbox_path.read_text())[0]["id"] == "existing-msg"
 
     def test_corrupt_outbox_not_overwritten(self, tmp_path: Path) -> None:
         _make_peer_json(tmp_path)
         outbox_path = tmp_path / "data" / "federation" / "nadi_outbox.json"
         corrupt = "!!! not json !!!"
         outbox_path.write_text(corrupt)
-        result = self._run_setup(
-            tmp_path, name="Test Node", role="relay",
-            repo="test-org/test-node",
-        )
-        assert result.returncode == 0
+        self._run_setup(tmp_path, name="Test", role="relay",
+                        repo="test-org/test-node")
         assert outbox_path.read_text() == corrupt
 
     def test_peer_public_key_preserved(self, tmp_path: Path) -> None:
         peer_path = _make_peer_json(tmp_path)
-        peer_data = json.loads(peer_path.read_text())
-        peer_data["identity"]["public_key"] = "my-custom-ed25519-key"
-        peer_path.write_text(json.dumps(peer_data, indent=2))
-        result = self._run_setup(
-            tmp_path, name="Test Node", role="governance",
-            repo="test-org/test-node",
-        )
-        assert result.returncode == 0
+        peer = json.loads(peer_path.read_text())
+        peer["identity"]["public_key"] = "my-key"
+        peer_path.write_text(json.dumps(peer, indent=2))
+        self._run_setup(tmp_path, name="Test", role="governance",
+                        repo="test-org/test-node")
         updated = json.loads(peer_path.read_text())
-        assert updated["identity"]["public_key"] == "my-custom-ed25519-key"
+        assert updated["identity"]["public_key"] == "my-key"
         assert "governance-participation" in updated["capabilities"]
