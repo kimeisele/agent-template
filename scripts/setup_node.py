@@ -19,7 +19,6 @@ from __future__ import annotations
 import argparse
 import enum
 import json
-import os
 import subprocess
 import sys
 from dataclasses import dataclass
@@ -79,6 +78,31 @@ class SetupContext:
     allow_remote_writes: bool
     # When allow_remote_writes is False, topic and governance writes
     # are gated off regardless of CLI flags.
+
+
+class TopicResult(enum.Enum):
+    """Structured outcome of a topic registration attempt."""
+
+    ALREADY_PRESENT = "already_present"     # Topic exists, no write needed
+    ADDED = "added"                         # Topic was successfully added
+    SKIPPED_OFFLINE = "skipped_offline"     # Local/offline mode, no attempt
+    SKIPPED_NO_AUTH = "skipped_no_auth"     # No gh CLI or token available
+    SKIPPED_NO_PERMISSION = "skipped_no_permission"  # Repo not writable
+    FAILED_READ = "failed_read"             # Could not read existing topics
+    FAILED_WRITE = "failed_write"           # Write command failed
+    FAILED_POSTCONDITION = "failed_postcondition"  # Re-read did not confirm
+
+
+@dataclass
+class TopicRegistration:
+    """Complete result of a topic registration operation."""
+
+    result: TopicResult
+    repository: str
+    topics_before: list[str]
+    topics_after: list[str]
+    message: str = ""
+    remote_attempted: bool = False
 
 
 # ── Federation constants ──────────────────────────────────────────────────
@@ -540,48 +564,157 @@ def _regenerate(config: dict) -> None:
             print(f"    {YELLOW}warning: {script} failed: {result.stderr.strip()[:80]}{RESET}")
 
 
-def _set_federation_topic(repo_full_name: str) -> bool:
-    """Set the ``agent-federation-node`` topic on *repo_full_name*.
+def _read_repository_topics(repo_full_name: str) -> list[str] | None:
+    """Read the current topic list for *repo_full_name* via ``gh`` CLI.
 
-    Tries ``gh`` CLI first, then falls back to ``GITHUB_TOKEN`` /
-    ``GH_TOKEN`` environment variables with ``curl``.
+    Returns the list of topic names, or ``None`` if they cannot be read.
+    """
+    try:
+        result = subprocess.run(
+            ["gh", "repo", "view", repo_full_name,
+             "--json", "repositoryTopics"],
+            capture_output=True, text=True, timeout=15,
+        )
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        return None
+    if result.returncode != 0:
+        return None
+    try:
+        data = json.loads(result.stdout)
+    except json.JSONDecodeError:
+        return None
+    topics = data.get("repositoryTopics", [])
+    if not isinstance(topics, list):
+        return None
+    return sorted(
+        {t["name"] for t in topics if isinstance(t, dict) and "name" in t}
+    )
 
-    Returns ``True`` if the topic was applied successfully.
+
+def _register_federation_topic(
+    repo_full_name: str,
+    *,
+    allow_remote_writes: bool,
+) -> TopicRegistration:
+    """Ensure ``agent-federation-node`` is present among the repository topics.
+
+    Reads existing topics, adds the federation topic if missing, and
+    verifies the result via re-read.  Existing topics are never removed.
+
+    When *allow_remote_writes* is ``False``, no remote operations are
+    attempted and ``SKIPPED_OFFLINE`` is returned.
     """
     TOPIC = "agent-federation-node"
 
-    # 1. Try gh CLI
+    if not allow_remote_writes:
+        return TopicRegistration(
+            result=TopicResult.SKIPPED_OFFLINE,
+            repository=repo_full_name,
+            topics_before=[],
+            topics_after=[],
+            message="Topic registration skipped: LOCAL/OFFLINE MODE",
+            remote_attempted=False,
+        )
+
+    # 1. Read existing topics
+    topics_before = _read_repository_topics(repo_full_name)
+    if topics_before is None:
+        return TopicRegistration(
+            result=TopicResult.FAILED_READ,
+            repository=repo_full_name,
+            topics_before=[],
+            topics_after=[],
+            message=(
+                "Could not read repository topics. "
+                "Ensure 'gh' CLI is installed and authenticated "
+                "(gh auth login)."
+            ),
+            remote_attempted=True,
+        )
+
+    # 2. Already present → no write needed
+    if TOPIC in topics_before:
+        return TopicRegistration(
+            result=TopicResult.ALREADY_PRESENT,
+            repository=repo_full_name,
+            topics_before=list(topics_before),
+            topics_after=list(topics_before),
+            message=f"Topic '{TOPIC}' already present",
+            remote_attempted=False,
+        )
+
+    # 3. Add the topic
     try:
         result = subprocess.run(
             ["gh", "repo", "edit", repo_full_name, "--add-topic", TOPIC],
             capture_output=True, text=True, timeout=15,
         )
-        if result.returncode == 0:
-            return True
     except (FileNotFoundError, subprocess.TimeoutExpired):
-        pass
+        return TopicRegistration(
+            result=TopicResult.SKIPPED_NO_AUTH,
+            repository=repo_full_name,
+            topics_before=list(topics_before),
+            topics_after=list(topics_before),
+            message=(
+                "gh CLI not available. "
+                "Manually run: gh repo edit "
+                f"{repo_full_name} --add-topic {TOPIC}"
+            ),
+            remote_attempted=True,
+        )
 
-    # 2. Try GITHUB_TOKEN / GH_TOKEN env var via curl
-    token = os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
-    if token:
-        try:
-            result = subprocess.run(
-                [
-                    "curl", "-sf", "-X", "PUT",
-                    f"https://api.github.com/repos/{repo_full_name}/topics",
-                    "-H", "Accept: application/vnd.github+json",
-                    "-H", f"Authorization: token {token}",
-                    "-H", "Content-Type: application/json",
-                    "-d", f'{{"names":["{TOPIC}"]}}',
-                ],
-                capture_output=True, text=True, timeout=15,
-            )
-            if result.returncode == 0:
-                return True
-        except (FileNotFoundError, subprocess.TimeoutExpired):
-            pass
+    if result.returncode != 0:
+        stderr_msg = result.stderr.strip()[:120] if result.stderr else ""
+        return TopicRegistration(
+            result=TopicResult.FAILED_WRITE,
+            repository=repo_full_name,
+            topics_before=list(topics_before),
+            topics_after=list(topics_before),
+            message=(
+                f"Failed to add topic '{TOPIC}'. "
+                f"Manually run: gh repo edit "
+                f"{repo_full_name} --add-topic {TOPIC}"
+                + (f" ({stderr_msg})" if stderr_msg else "")
+            ),
+            remote_attempted=True,
+        )
 
-    return False
+    # 4. Re-read postcondition
+    topics_after = _read_repository_topics(repo_full_name)
+    if topics_after is None:
+        return TopicRegistration(
+            result=TopicResult.FAILED_POSTCONDITION,
+            repository=repo_full_name,
+            topics_before=list(topics_before),
+            topics_after=[TOPIC],  # expected
+            message=(
+                f"Topic '{TOPIC}' was written but could not be verified. "
+                f"Check: gh repo view {repo_full_name} --json repositoryTopics"
+            ),
+            remote_attempted=True,
+        )
+
+    if TOPIC in topics_after:
+        return TopicRegistration(
+            result=TopicResult.ADDED,
+            repository=repo_full_name,
+            topics_before=list(topics_before),
+            topics_after=list(topics_after),
+            message=f"Topic '{TOPIC}' added successfully",
+            remote_attempted=True,
+        )
+
+    return TopicRegistration(
+        result=TopicResult.FAILED_POSTCONDITION,
+        repository=repo_full_name,
+        topics_before=list(topics_before),
+        topics_after=list(topics_after),
+        message=(
+            f"Write succeeded but re-read did not confirm '{TOPIC}'. "
+            f"Check: gh repo view {repo_full_name} --json repositoryTopics"
+        ),
+        remote_attempted=True,
+    )
 
 
 # ── Main wizard ───────────────────────────────────────────────────────────
@@ -768,18 +901,23 @@ def apply_config(
     print(f"    {CYAN}https://github.com/{AGENT_CITY_REPO}/issues/new?template=agent-registration.yml{RESET}")
 
     # Federation topic (gated)
-    topic_ok = False
-    if ctx.allow_remote_writes:
-        topic_ok = _set_federation_topic(config["github_repo"])
-    else:
-        print(
-            f"\n  {DIM}── Topic (skipped — local/offline mode) ──{RESET}"
-        )
+    topic_reg = _register_federation_topic(
+        config["github_repo"],
+        allow_remote_writes=ctx.allow_remote_writes,
+    )
+    _print_topic_result(topic_reg)
 
     # ── Governance: branch protection baseline ──
     governance_exit = _run_governance_step(
         interactive=interactive,
         apply_governance=apply_governance and ctx.allow_remote_writes,
+    )
+
+    # Completion status
+    federation_complete = (
+        topic_reg.result in (TopicResult.ALREADY_PRESENT, TopicResult.ADDED)
+        and ctx.allow_remote_writes
+        and governance_exit == ComplianceStatus.CONFORMANT
     )
 
     # Next steps
@@ -789,20 +927,59 @@ def apply_config(
     print(f"  3. Commit files:         {CYAN}git add -A && git commit -m 'Initialize federation node'{RESET}")
     print(f"  4. Push branch:          {CYAN}git push -u origin setup-federation-node{RESET}")
     print(f"  5. Open Pull Request:    {CYAN}(PR from setup-federation-node → main){RESET}")
-    if topic_ok:
-        print(f"  6. Topic:                {GREEN}agent-federation-node ✓{RESET}")
-    elif ctx.allow_remote_writes:
-        print(f"  6. Add the topic:        {CYAN}gh repo edit --add-topic agent-federation-node{RESET}")
-    else:
+    if topic_reg.result == TopicResult.ALREADY_PRESENT:
+        print(f"  6. Topic:                {GREEN}agent-federation-node ✓ (already present){RESET}")
+    elif topic_reg.result == TopicResult.ADDED:
+        print(f"  6. Topic:                {GREEN}agent-federation-node ✓ (added){RESET}")
+    elif topic_reg.result == TopicResult.SKIPPED_OFFLINE:
         print(f"  6. Add the topic:        {CYAN}gh repo edit --add-topic agent-federation-node{RESET}  {DIM}(once pushed){RESET}")
+    else:
+        print(f"  6. Add the topic:        {CYAN}gh repo edit --add-topic agent-federation-node{RESET}")
     print(f"  7. Register with city:   {CYAN}(link above){RESET}")
     print("  8. Review + merge PR")
     print(f"  9. Start NADI daemon:    {CYAN}python scripts/nadi_daemon.py --once{RESET}")
     print(f" 10. Send a message:       {CYAN}python scripts/nadi_send.py --to agent-internet --op heartbeat{RESET}")
     print(f"\n  Re-run: {CYAN}python scripts/setup_node.py{RESET}  |  Status: {CYAN}python scripts/setup_node.py --status{RESET}")
     print(f"  Apply governance: {CYAN}python scripts/setup_node.py --apply-governance{RESET}")
+
+    # Final status banner
+    print()
+    if federation_complete:
+        print(f"{BOLD}{'─' * 40}{RESET}")
+        print(f"{GREEN}{BOLD}  FEDERATION REGISTRATION COMPLETE{RESET}")
+        print(f"{BOLD}{'─' * 40}{RESET}")
+    elif not ctx.allow_remote_writes:
+        print(f"{BOLD}{'─' * 40}{RESET}")
+        print(f"{BOLD}  LOCAL MATERIALIZATION COMPLETE{RESET}")
+        print(f"{DIM}  (remote registration requires a pushed repository){RESET}")
+        print(f"{BOLD}{'─' * 40}{RESET}")
+    else:
+        print(f"{BOLD}{'─' * 40}{RESET}")
+        print(f"{YELLOW}{BOLD}  LOCAL MATERIALIZATION COMPLETE{RESET}")
+        print(f"{DIM}  (remote registration incomplete — see topic status above){RESET}")
+        print(f"{BOLD}{'─' * 40}{RESET}")
     print()
     return governance_exit
+
+
+def _print_topic_result(reg: TopicRegistration) -> None:
+    """Print the topic registration result with appropriate status."""
+    print()
+    if reg.result == TopicResult.ALREADY_PRESENT:
+        print(f"  {GREEN}✓{RESET} Topic agent-federation-node already present")
+    elif reg.result == TopicResult.ADDED:
+        print(f"  {GREEN}✓{RESET} Topic agent-federation-node added")
+        print(f"  {DIM}Topics before: {', '.join(reg.topics_before) or '(none)'}{RESET}")
+        print(f"  {DIM}Topics after:  {', '.join(reg.topics_after)}{RESET}")
+    elif reg.result == TopicResult.SKIPPED_OFFLINE:
+        print(f"  {DIM}── Topic registration skipped (local/offline mode) ──{RESET}")
+    elif reg.result == TopicResult.SKIPPED_NO_AUTH:
+        print(f"  {YELLOW}!{RESET} Topic registration skipped — {reg.message}")
+    elif reg.result == TopicResult.SKIPPED_NO_PERMISSION:
+        print(f"  {YELLOW}!{RESET} {reg.message}")
+    elif reg.result in (TopicResult.FAILED_READ, TopicResult.FAILED_WRITE,
+                        TopicResult.FAILED_POSTCONDITION):
+        print(f"  {YELLOW}!{RESET} {reg.message}")
 
 
 def _print_readme_result(result: ReadmeResult) -> None:
