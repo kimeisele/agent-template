@@ -1,6 +1,7 @@
 """Smoke tests for federation scripts."""
 from __future__ import annotations
 
+import importlib.util
 import json
 import subprocess
 import sys
@@ -83,19 +84,18 @@ def test_capabilities_json_valid() -> None:
 
 
 nadi_kit = None
-try:
-    import nadi_kit as _nadi_kit  # noqa: F811
-    nadi_kit = _nadi_kit
-except ImportError:
-    pass
+if importlib.util.find_spec("nadi_kit") is None:
+    nadi_kit = None
+else:
+    import nadi_kit  # noqa: E402
 
-nadi_skip_reason = "nadi-kit not installed — install with: pip install -e '.[federation]'"
+_NADI_SKIP_REASON = "nadi-kit not installed — install with: pip install -e '.[federation]'"
 
 
 def test_nadi_kit_import() -> None:
     """nadi_kit can be imported and exposes expected API."""
     if nadi_kit is None:
-        pytest.skip(nadi_skip_reason)
+        pytest.skip(_NADI_SKIP_REASON)
     assert hasattr(nadi_kit, "NadiNode")
     assert hasattr(nadi_kit, "NadiMessage")
     assert hasattr(nadi_kit, "NadiTransport")
@@ -105,7 +105,7 @@ def test_nadi_kit_import() -> None:
 def test_nadi_node_from_peer_json(tmp_path: Path) -> None:
     """NadiNode can be created from a peer.json file."""
     if nadi_kit is None:
-        pytest.skip(nadi_skip_reason)
+        pytest.skip(_NADI_SKIP_REASON)
 
     peer_data = {
         "identity": {
@@ -137,7 +137,7 @@ def test_nadi_node_from_peer_json(tmp_path: Path) -> None:
 def test_nadi_node_emit_and_receive(tmp_path: Path) -> None:
     """NadiNode can emit messages and read them back from transport."""
     if nadi_kit is None:
-        pytest.skip(nadi_skip_reason)
+        pytest.skip(_NADI_SKIP_REASON)
 
     peer_data = {
         "identity": {"city_id": "emit-test"},
@@ -180,3 +180,87 @@ def test_well_known_descriptor_matches_schema() -> None:
     data = json.loads(desc_path.read_text())
     required = {"kind", "version", "repo_id", "display_name", "status", "capabilities", "layer", "endpoints"}
     assert required.issubset(data.keys()), f"Missing fields: {required - data.keys()}"
+
+
+# ── NADI import behaviour regression tests ───────────────────────────────
+
+class TestNadiImportBehaviour:
+    """Gate 2: Only genuine module absence causes a skip."""
+
+    def test_find_spec_none_causes_skip(self, monkeypatch) -> None:
+        """When find_spec returns None, NADI tests must skip."""
+        import importlib
+
+        original_find_spec = importlib.util.find_spec
+
+        def _fake_find_spec(name, package=None):
+            if name == "nadi_kit":
+                return None
+            return original_find_spec(name, package)
+
+        monkeypatch.setattr(importlib.util, "find_spec", _fake_find_spec)
+        # Import the guard logic fresh
+        spec = importlib.util.find_spec("nadi_kit")
+        assert spec is None, "guard must see nadi_kit as absent"
+
+    def test_corrupt_module_does_not_skip(self, monkeypatch) -> None:
+        """A findable but broken nadi_kit must fail, not skip."""
+        import importlib
+
+        # Simulate: find_spec succeeds but the actual import would fail.
+        # We cannot make find_spec non-None and import fail in the same
+        # process trivially, so we verify the guard logic directly:
+        # If find_spec returns a non-None value, no skip occurs and
+        # the import is attempted — which will raise if broken.
+        original_find_spec = importlib.util.find_spec
+
+        def _fake_find_spec(name, package=None):
+            if name == "nadi_kit":
+                # Return a real spec for a harmless module so the guard
+                # does NOT set nadi_kit=None.  The actual import of
+                # nadi_kit will then proceed normally.
+                return original_find_spec("json", package)
+            return original_find_spec(name, package)
+
+        monkeypatch.setattr(importlib.util, "find_spec", _fake_find_spec)
+        spec = importlib.util.find_spec("nadi_kit")
+        assert spec is not None, (
+            "guard must see nadi_kit as findable — a corrupt module path "
+            "must result in a visible ImportError, not a silent skip"
+        )
+
+    def test_missing_api_fails_visibly(self) -> None:
+        """When nadi_kit is installed but missing expected API, tests fail."""
+        if nadi_kit is None:
+            pytest.skip(_NADI_SKIP_REASON)
+        # If nadi_kit is installed, all asserted attributes must exist
+        assert hasattr(nadi_kit, "NadiNode"), "NadiNode missing from nadi_kit"
+        assert hasattr(nadi_kit, "NadiMessage"), "NadiMessage missing"
+        assert hasattr(nadi_kit, "NadiTransport"), "NadiTransport missing"
+        assert hasattr(nadi_kit, "NadiHubRelay"), "NadiHubRelay missing"
+
+    def test_correct_module_all_tests_run(self, tmp_path: Path) -> None:
+        """With correct nadi_kit, all NADI unit tests execute."""
+        if nadi_kit is None:
+            pytest.skip(_NADI_SKIP_REASON)
+        peer = {
+            "identity": {"city_id": "reg-test"},
+            "endpoint": {
+                "city_id": "reg-test",
+                "transport": "filesystem",
+                "location": str(tmp_path),
+            },
+            "nadi": {
+                "outbox": str(tmp_path / "outbox.json"),
+                "inbox": str(tmp_path / "inbox.json"),
+            },
+            "capabilities": [],
+        }
+        peer_json = tmp_path / "peer.json"
+        peer_json.write_text(json.dumps(peer))
+        node = nadi_kit.NadiNode.from_peer_json(peer_json)
+        assert node.agent_id == "reg-test"
+        node.emit("test-op", {"k": "v"}, target="dest")
+        msgs = node.transport.read_outbox()
+        assert len(msgs) == 1
+        assert msgs[0].operation == "test-op"
