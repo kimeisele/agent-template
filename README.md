@@ -202,7 +202,7 @@ The **Federation Discovery** workflow runs weekly and commits results to `.feder
 
 ## Nadi transport
 
-Your node ships with a `nadi_outbox.json` — a plain JSON array where you queue messages for other federation nodes. The [agent-internet](https://github.com/kimeisele/agent-internet) relay pump periodically checks out sibling repos, reads their outboxes, and delivers envelopes to the target node's inbox.
+Your node ships with `data/federation/nadi_outbox.json` — a plain JSON array where you queue messages for other federation nodes. The [agent-internet](https://github.com/kimeisele/agent-internet) relay pump periodically checks out sibling repos, reads their outboxes, and delivers envelopes to the target node's inbox.
 
 ```bash
 # Send a heartbeat to agent-internet
@@ -259,7 +259,7 @@ See [agent-research/capabilities.json](https://github.com/kimeisele/agent-resear
 | `scripts/discover_federation_peers.py` | Discovers peers via GitHub API | Keep |
 | `scripts/fetch_peer_authority.py` | Fetches & verifies peer authority feeds | Keep |
 | `scripts/nadi_send.py` | Queue messages to Nadi outbox for relay | Keep |
-| `nadi_outbox.json` | Nadi transport outbox (plain `[]` array) | Auto-managed |
+| `data/federation/nadi_outbox.json` | Nadi transport outbox (plain `[]` array) | Auto-managed |
 | `pyproject.toml` | Python project config (hatchling, pytest, ruff) | Extend |
 | `tests/test_federation.py` | Federation smoke tests (8 tests) | Extend |
 

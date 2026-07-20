@@ -18,7 +18,7 @@ docs/authority/
   capabilities.json        ← capability manifest (edit this)
 data/federation/
   authority-descriptor-seeds.json  ← known peer URLs
-nadi_outbox.json                       ← Nadi transport outbox (plain [] array)
+data/federation/nadi_outbox.json       ← Nadi transport outbox (plain [] array)
 scripts/
   render_federation_descriptor.py  ← generates .well-known/agent-federation.json
   render_agent_card.py             ← generates .well-known/agent.json
@@ -80,7 +80,7 @@ python scripts/discover_federation_peers.py
 - Capability manifest follows the `agent_capability_manifest` schema with `federation_interfaces.produces` / `consumes` / `protocols`
 - Discovery is dual-mode: seed-based (offline/unauthed) + GitHub topic search (`agent-federation-node`)
 - Authority feeds are versioned by git commit SHA with SHA-256 content hashing
-- Nadi transport: `nadi_outbox.json` is a plain `[]` array of `DeliveryEnvelope` objects; relay runs from agent-internet, not from each node
+- Nadi transport: `data/federation/nadi_outbox.json` is a plain `[]` array of `DeliveryEnvelope` objects; relay runs from agent-internet, not from each node
 
 ## Git workflow
 

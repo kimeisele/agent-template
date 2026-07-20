@@ -349,3 +349,73 @@ def _parse_github_full_name(remote_url: str) -> str | None:
         return None
 
     return None
+
+
+# ── NADI path contract ──────────────────────────────────────────────────────
+
+
+@dataclass(frozen=True)
+class NadiPathContract:
+    """Resolved NADI file paths derived from a peer.json.
+
+    The actual ``nadi-kit`` transport contract is::
+
+        federation_dir = peer_path.parent
+        outbox = federation_dir / "nadi_outbox.json"
+        inbox  = federation_dir / "nadi_inbox.json"
+
+    Declared ``nadi.outbox`` / ``nadi.inbox`` fields are validated
+    against this contract and rejected if they differ.
+    """
+
+    peer_path: Path
+    federation_dir: Path
+    inbox_path: Path
+    outbox_path: Path
+
+
+class NadiPathError(ValueError):
+    """Raised when the NADI path contract cannot be satisfied."""
+
+
+def resolve_and_validate_nadi_paths(peer_path: Path) -> NadiPathContract:
+    """Read *peer_path* and return a validated :class:`NadiPathContract`.
+
+    Raises :class:`NadiPathError` on missing file, invalid JSON, or
+    declarative path mismatches.
+
+    This function is read-only — it does not create files, directories,
+    or keys.
+    """
+    if not peer_path.exists():
+        raise NadiPathError(f"peer.json not found: {peer_path}")
+
+    try:
+        peer = json.loads(peer_path.read_text())
+    except json.JSONDecodeError as exc:
+        raise NadiPathError(f"peer.json is not valid JSON: {exc}") from exc
+
+    federation_dir = peer_path.parent
+    # Repo root is two levels up from federation_dir:
+    # peer.json at <repo>/data/federation/peer.json
+    repo_root = federation_dir.parent.parent
+
+    for key, filename in [("outbox", "nadi_outbox.json"),
+                          ("inbox", "nadi_inbox.json")]:
+        declared = peer.get("nadi", {}).get(key)
+        if declared and isinstance(declared, str):
+            resolved = (repo_root / declared).resolve()
+            actual = (federation_dir / filename).resolve()
+            if resolved != actual:
+                raise NadiPathError(
+                    f"nadi.{key} declares {declared} "
+                    f"(resolves to {resolved}), "
+                    f"but actual transport path is {actual}"
+                )
+
+    return NadiPathContract(
+        peer_path=peer_path.resolve(),
+        federation_dir=federation_dir.resolve(),
+        inbox_path=(federation_dir / "nadi_inbox.json").resolve(),
+        outbox_path=(federation_dir / "nadi_outbox.json").resolve(),
+    )
