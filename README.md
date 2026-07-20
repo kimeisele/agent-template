@@ -106,6 +106,8 @@ python scripts/quickstart.py
 ### After setup
 
 The default branch is protected by the `agent-federation-baseline-v1` ruleset.
+See [`docs/governance/DEFAULT_BRANCH_GOVERNANCE_VALIDATION.md`](docs/governance/DEFAULT_BRANCH_GOVERNANCE_VALIDATION.md)
+for design rationale, test coverage, live-proof results, and known limitations.
 Local changes must go through a pull request:
 
 ```bash
