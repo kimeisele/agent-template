@@ -27,7 +27,10 @@ scripts/
   fetch_peer_authority.py          ← fetches + SHA-256-verifies peer feeds
   nadi_send.py                     ← queue DeliveryEnvelope messages to outbox
 tests/
-  test_federation.py               ← 8 smoke tests
+  test_federation.py               ← federation smoke tests
+  test_governance.py               ← governance baseline tests
+  test_identity.py                 ← identity / drift / topic tests
+  test_nadi.py                     ← nadi path / daemon / send tests
 ```
 
 ## Setup
@@ -80,7 +83,7 @@ python scripts/discover_federation_peers.py
 - Capability manifest follows the `agent_capability_manifest` schema with `federation_interfaces.produces` / `consumes` / `protocols`
 - Discovery is dual-mode: seed-based (offline/unauthed) + GitHub topic search (`agent-federation-node`)
 - Authority feeds are versioned by git commit SHA with SHA-256 content hashing
-- Nadi transport: `data/federation/nadi_outbox.json` is a plain `[]` array of `DeliveryEnvelope` objects; relay runs from agent-internet, not from each node
+- Nadi transport: `data/federation/nadi_outbox.json` holds signed `NadiMessage` entries written by `nadi_send.py` via `NadiNode.emit()`; `nadi_daemon.py --once` gives a read-only local diagnostic; `--relay` enables hub push/pull
 
 ## Git workflow
 
@@ -88,7 +91,7 @@ python scripts/discover_federation_peers.py
 - Pushing to `main` triggers: descriptor sync, agent card sync, authority feed publish
 - Bot commits use `[skip ci]` to prevent infinite workflow loops
 - Federation discovery runs weekly (Monday 06:00 UTC)
-- Bot commits use `agent-template-bot` / `bot@agent-template`
+- Bot commits use `federation-bot` / `bot@federation`
 
 ## What to customize
 

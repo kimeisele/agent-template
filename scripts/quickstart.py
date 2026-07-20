@@ -165,9 +165,12 @@ def main() -> int:
     # Summary
     print()
     if ok:
-        print(f"{GREEN}{BOLD}Your federation node is ready.{RESET}")
+        print(f"{GREEN}{BOLD}Federation node validated.{RESET}")
         print("Next: customize docs/authority/charter.md and docs/authority/capabilities.json")
-        print("Then: push to main — your node will be discoverable across the federation\n")
+        print(
+            "Then: create a PR to main — once merged, "
+            "your node will be discoverable across the federation\n"
+        )
     else:
         print(f"{RED}{BOLD}Some checks failed. See above for details.{RESET}\n")
 

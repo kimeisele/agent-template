@@ -6,7 +6,7 @@ on:
     - cron: '*/15 * * * *'
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: heartbeat
@@ -20,72 +20,101 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-        with:
-          token: ${{ secrets.FEDERATION_PAT || secrets.GITHUB_TOKEN }}
 
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
 
-      - name: Install dependencies
-        run: pip install cryptography
+      - name: Install core validation dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev]"
 
-      - name: Download nadi_kit
+      - name: Core validation
+        run: |
+          python -m pytest tests/ -q --tb=short
+          ruff check .
+
+      - name: Check optional federation configuration
+        id: federation-config
         env:
+          FEDERATION_PAT: ${{ secrets.FEDERATION_PAT }}
           NODE_PRIVATE_KEY: ${{ secrets.NODE_PRIVATE_KEY }}
-          GH_TOKEN: ${{ secrets.FEDERATION_PAT || secrets.GITHUB_TOKEN }}
         run: |
-          curl -sL -H "Authorization: token ${GH_TOKEN}" \
-            "https://raw.githubusercontent.com/kimeisele/steward-federation/main/nadi_kit.py" \
-            -o nadi_kit.py
-          python3 -c "import sys; sys.path.insert(0, '.'); import nadi_kit; print('nadi_kit loaded')"
+          python scripts/heartbeat_workflow_guard.py > federation-status.json
+          STATUS="$(python -c 'import json,sys; print(json.load(open("federation-status.json"))["status"])')"
 
-      - name: Run NADI heartbeat cycle
+          case "$STATUS" in
+            REMOTE_ENABLED)
+              echo "remote-enabled=true" >> "$GITHUB_OUTPUT"
+              ;;
+            REMOTE_DISABLED_MISSING_PAT)
+              echo "remote-enabled=false" >> "$GITHUB_OUTPUT"
+              echo "::notice ::Remote federation relay skipped: FEDERATION_PAT is not configured."
+              ;;
+            REMOTE_DISABLED_MISSING_NODE_KEY)
+              echo "remote-enabled=false" >> "$GITHUB_OUTPUT"
+              echo "::notice ::Signed remote heartbeat skipped: NODE_PRIVATE_KEY is not configured."
+              ;;
+            *)
+              echo "::error ::Unknown federation guard state: $STATUS"
+              exit 1
+              ;;
+          esac
+
+      - name: Verify hub access (PAT read postcondition)
+        if: steps.federation-config.outputs.remote-enabled == 'true'
         env:
-          NODE_PRIVATE_KEY: ${{ secrets.NODE_PRIVATE_KEY }}
-          GH_TOKEN: ${{ secrets.FEDERATION_PAT || secrets.GITHUB_TOKEN }}
-          GITHUB_TOKEN: ${{ secrets.FEDERATION_PAT || secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.FEDERATION_PAT }}
         run: |
-          python3 nadi_kit.py --peer-json data/federation/peer.json sync
-          python3 nadi_kit.py --peer-json data/federation/peer.json heartbeat --health 1.0
-          python3 nadi_kit.py --peer-json data/federation/peer.json sync
-
-      - name: Commit federation state
-        if: always()
-        run: |
-          git config user.name "federation-bot"
-          git config user.email "bot@federation"
-          git add data/federation/ || true
-          git diff --cached --quiet || git commit -m "chore: heartbeat state"
-          git push || true
-
-      - name: Relay outbox to steward-federation hub
-        if: always()
-        env:
-          GH_TOKEN: ${{ secrets.FEDERATION_PAT || secrets.GITHUB_TOKEN }}
-        run: |
-          OUTBOX="data/federation/nadi_outbox.json"
-          if [ ! -f "$OUTBOX" ] || [ "$(cat "$OUTBOX" | tr -d '[:space:]')" = "[]" ]; then
-            echo "Outbox empty, skipping relay"
-            exit 0
+          RESULT="$(gh api repos/kimeisele/steward-federation --jq '.full_name')"
+          if [ "$RESULT" != "kimeisele/steward-federation" ]; then
+            echo "::error ::Cannot verify hub access. Expected kimeisele/steward-federation, got: $RESULT"
+            exit 1
           fi
-          git clone --depth=1 https://x-access-token:${GH_TOKEN}@github.com/kimeisele/steward-federation.git /tmp/hub
-          mkdir -p /tmp/hub/nadi
-          cp "$OUTBOX" /tmp/hub/nadi/agent-template_to_steward.json
-          cd /tmp/hub
-          git config user.name "federation-bot"
-          git config user.email "bot@federation"
-          git add nadi/agent-template_to_steward.json
-          git diff --cached --quiet || git commit -m "relay: agent-template outbox -> steward (#${{ github.run_number }})"
-          max_retries=10
-          count=0
-          until git push origin main; do
-            count=$((count+1))
-            if [ $count -gt $max_retries ]; then echo "Push failed"; exit 1; fi
-            backoff=$(( (RANDOM % 15) + 2 ))
-            sleep $backoff
-            git pull --rebase origin main
-          done
-          echo "[]" > "$OUTBOX"
-          echo "Outbox relayed and cleared"
+          echo "Hub access verified: $RESULT"
+
+      - name: Install nadi-kit
+        if: steps.federation-config.outputs.remote-enabled == 'true'
+        run: |
+          pip install "nadi-kit @ git+https://github.com/kimeisele/steward-federation.git@c613577b7353d3cb1fd31be542aed8766f195079"
+
+      - name: Initial NADI sync
+        if: steps.federation-config.outputs.remote-enabled == 'true'
+        env:
+          NODE_PRIVATE_KEY: ${{ secrets.NODE_PRIVATE_KEY }}
+          GH_TOKEN: ${{ secrets.FEDERATION_PAT }}
+        run: |
+          python3 -m nadi_kit --peer-json data/federation/peer.json sync
+
+      - name: Emit signed heartbeat
+        if: steps.federation-config.outputs.remote-enabled == 'true'
+        env:
+          NODE_PRIVATE_KEY: ${{ secrets.NODE_PRIVATE_KEY }}
+          GH_TOKEN: ${{ secrets.FEDERATION_PAT }}
+        run: |
+          python3 -m nadi_kit --peer-json data/federation/peer.json heartbeat --health 1.0
+
+      - name: Capture heartbeat proof
+        if: steps.federation-config.outputs.remote-enabled == 'true'
+        run: |
+          python scripts/heartbeat_postcondition.py capture \
+            --outbox data/federation/nadi_outbox.json \
+            --output heartbeat-proof.json
+
+      - name: Final NADI sync
+        if: steps.federation-config.outputs.remote-enabled == 'true'
+        env:
+          NODE_PRIVATE_KEY: ${{ secrets.NODE_PRIVATE_KEY }}
+          GH_TOKEN: ${{ secrets.FEDERATION_PAT }}
+        run: |
+          python3 -m nadi_kit --peer-json data/federation/peer.json sync
+
+      - name: Verify hub postcondition
+        if: steps.federation-config.outputs.remote-enabled == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.FEDERATION_PAT }}
+        run: |
+          python scripts/heartbeat_postcondition.py verify \
+            --proof heartbeat-proof.json
