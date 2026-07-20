@@ -119,25 +119,49 @@ def _list_hub_nadi_files() -> list[dict] | None:
     return entries if isinstance(entries, list) else None
 
 
-def _fetch_hub_file(download_url: str) -> list | None:
+def _fetch_hub_file(api_url: str) -> list | None:
+    """Fetch a single hub nadi file via the GitHub Contents API.
+
+    The response must be a JSON object with ``encoding: "base64"`` and
+    a ``content`` field.  The decoded content must be a JSON list.
+    Returns ``None`` on any failure.
+    """
     result = subprocess.run(
-        ["gh", "api", download_url],
+        ["gh", "api", api_url],
         capture_output=True, text=True, timeout=15,
         env={**os.environ, "GH_TOKEN": os.environ.get("GH_TOKEN", "")},
     )
     if result.returncode != 0:
         return None
+
     try:
         data = json.loads(result.stdout)
     except json.JSONDecodeError:
         return None
-    if isinstance(data, dict) and "content" in data:
-        try:
-            raw = base64.b64decode(data["content"]).decode("utf-8")
-            return json.loads(raw)
-        except Exception:
-            return None
-    return None
+
+    # Must be a Contents API object (dict with encoding/content), not a raw list
+    if not isinstance(data, dict):
+        return None
+
+    encoding = data.get("encoding")
+    if encoding != "base64":
+        return None
+
+    encoded = data.get("content")
+    if not isinstance(encoded, str):
+        return None
+
+    try:
+        raw_bytes = base64.b64decode(encoded)
+        raw_text = raw_bytes.decode("utf-8")
+        parsed = json.loads(raw_text)
+    except Exception:
+        return None
+
+    if not isinstance(parsed, list):
+        return None
+
+    return parsed
 
 
 def cmd_verify(proof_path: str) -> int:
@@ -188,10 +212,10 @@ def cmd_verify(proof_path: str) -> int:
     # Read matching files, validate heartbeat IDs with correct source + operation
     found_heartbeat_ids: set[str] = set()
     for entry in matching:
-        download_url = entry.get("download_url") or entry.get("url", "")
-        if not download_url:
+        api_url = entry.get("url", "")
+        if not api_url:
             continue
-        content = _fetch_hub_file(download_url)
+        content = _fetch_hub_file(api_url)
         if isinstance(content, list):
             for msg in content:
                 if not isinstance(msg, dict):
