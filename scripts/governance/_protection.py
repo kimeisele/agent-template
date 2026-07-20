@@ -71,16 +71,33 @@ def ensure_governance_baseline(repo: RepoInfo, check: GovernanceCheck) -> Govern
     """Create the federation-baseline ruleset if it is missing.
 
     In v1, existing rulesets are **never** updated via PUT.
-    Returns a result with the action taken and a re-read final_check.
-    """
-    action, _create_diag = _ensure_baseline_ruleset(repo)
+    Always re-reads and verifies after any action.
 
-    # Re-read and verify — no local boolean as proof
+    Returns a :class:`GovernanceResult` with:
+    - *action* — what was attempted
+    - *diagnostics* / *details* — apply-step outcome
+    - *final_check* — re-read after action (MUST be CONFORMANT for success)
+    """
+    action, diag = _ensure_baseline_ruleset(repo)
+
+    diagnostics: list[Diagnostic] = []
+    details: list[str] = []
+    if diag != Diagnostic.OK:
+        diagnostics.append(diag)
+        details.append(f"Apply diagnostic: {diag.value}")
+
+    # Re-read and verify — no local boolean as proof, for EVERY action
     final_check: GovernanceCheck | None = None
-    if action == "created":
+    if action is not None:
         final_check = inspect_governance(repo)
 
-    return GovernanceResult(check=check, action=action, final_check=final_check)
+    return GovernanceResult(
+        check=check,
+        action=action,
+        diagnostics=diagnostics,
+        details=details,
+        final_check=final_check,
+    )
 
 
 # ── Internal: data fetching ────────────────────────────────────────────────
@@ -293,6 +310,10 @@ def _ensure_baseline_ruleset(repo: RepoInfo) -> tuple[str | None, Diagnostic]:
 
     In v1, this function **never** issues a PUT to update an existing
     ruleset.  It only creates via POST when the ruleset is absent.
+
+    Returns ``(action, diagnostic)`` where *action* is one of
+    ``"created"``, ``"skipped"``, ``"skipped_conservative"``, or
+    ``None`` (when diagnostic is not OK).
     """
     # 1. List existing rulesets
     list_resp = github_api(
@@ -300,43 +321,42 @@ def _ensure_baseline_ruleset(repo: RepoInfo) -> tuple[str | None, Diagnostic]:
         f"/repos/{repo.full_name}/rulesets?includes_parents=false",
     )
     if list_resp.status_code != 200 or not isinstance(list_resp.body, list):
-        return None, Diagnostic.GITHUB_UNREACHABLE
+        diag = _http_to_diag(list_resp.status_code)
+        return None, diag
 
-    # 2. Look for our ruleset by name — extract ID
-    candidate_id = None
+    # 2. Find candidates by reserved name
+    candidates: list[dict] = []
     for rs in list_resp.body:
         if isinstance(rs, dict) and rs.get("name") == RULESET_NAME:
-            candidate_id = rs.get("id")
-            break
+            candidates.append(rs)
 
-    # 3. Fetch the full, authoritative ruleset detail by ID
-    existing_detail = None
-    if candidate_id is not None:
-        detail_resp = github_api(
-            "GET",
-            f"/repos/{repo.full_name}/rulesets/{candidate_id}",
-        )
-        if detail_resp.status_code == 200 and isinstance(detail_resp.body, dict):
-            existing_detail = detail_resp.body
-        else:
-            # Cannot verify the ruleset — do not mutate
-            return None, Diagnostic.UNSUPPORTED_CONFIG
+    # 3. No candidate → POST create (safe)
+    if not candidates:
+        return _create_ruleset(repo)
 
-    # 4. Ruleset is absent → POST create
-    if existing_detail is None:
-        payload = copy.deepcopy(RULESET_PAYLOAD_V1)
-        create_resp = github_api(
-            "POST",
-            f"/repos/{repo.full_name}/rulesets",
-            body=payload,
-        )
-        if create_resp.status_code == 201:
-            return "created", Diagnostic.OK
-        if create_resp.status_code in (401, 403):
-            return None, _auth_diag(create_resp.status_code)
-        return None, Diagnostic.API_ERROR
+    # 4. Multiple candidates → conflict, do not touch
+    if len(candidates) > 1:
+        return None, Diagnostic.UNSUPPORTED_CONFIG
 
-    # 5. Ruleset exists — check compatibility against authoritative detail
+    # 5. Single candidate — validate ID
+    candidate = candidates[0]
+    candidate_id = candidate.get("id")
+    if not isinstance(candidate_id, int):
+        # Candidate exists but ID is missing or invalid → do not touch
+        return None, Diagnostic.UNSUPPORTED_CONFIG
+
+    # 6. Fetch the full, authoritative ruleset detail by ID
+    detail_resp = github_api(
+        "GET",
+        f"/repos/{repo.full_name}/rulesets/{candidate_id}",
+    )
+    if detail_resp.status_code != 200 or not isinstance(detail_resp.body, dict):
+        # Cannot verify — do not mutate
+        return None, Diagnostic.UNSUPPORTED_CONFIG
+
+    existing_detail = detail_resp.body
+
+    # 7. Ruleset exists — check compatibility against authoritative detail
     compatible, reason = _is_compatible(existing_detail)
 
     if compatible:
@@ -346,6 +366,32 @@ def _ensure_baseline_ruleset(repo: RepoInfo) -> tuple[str | None, Diagnostic]:
 
     # Incompatible / unknown → do not touch
     return None, Diagnostic.UNSUPPORTED_CONFIG
+
+
+def _create_ruleset(repo: RepoInfo) -> tuple[str | None, Diagnostic]:
+    """POST the baseline ruleset.  Returns ``("created", OK)`` on success."""
+    payload = copy.deepcopy(RULESET_PAYLOAD_V1)
+    create_resp = github_api(
+        "POST",
+        f"/repos/{repo.full_name}/rulesets",
+        body=payload,
+    )
+    if create_resp.status_code == 201:
+        return "created", Diagnostic.OK
+    return None, _http_to_diag(create_resp.status_code)
+
+
+def _http_to_diag(status_code: int) -> Diagnostic:
+    """Map HTTP status codes to governance diagnostics."""
+    if status_code == 401:
+        return Diagnostic.AUTH_MISSING
+    if status_code == 403:
+        return Diagnostic.PERMISSION_INSUFFICIENT
+    if status_code == 0 or status_code >= 500:
+        return Diagnostic.GITHUB_UNREACHABLE
+    if status_code == 422:
+        return Diagnostic.UNSUPPORTED_CONFIG
+    return Diagnostic.API_ERROR
 
 
 def _is_compatible(existing: dict) -> tuple[bool, str]:

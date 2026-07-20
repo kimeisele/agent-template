@@ -1087,3 +1087,229 @@ class TestBlocker5StatusCallCount:
         # inspect_governance makes exactly 2 API calls: rules/branches + branches/protection
         rules_calls = [c for c in call_paths if "/rules/branches/" in c]
         assert len(rules_calls) == 1  # exactly one rules/branches call
+
+
+# ── Blocker 6–8 Tests ──────────────────────────────────────────────────────
+
+
+class TestBlocker6CandidateIdValidation:
+    """Blocker 6: Candidate without valid ID must not trigger POST."""
+
+    @patch("governance._protection.github_api")
+    def test_candidate_without_id_no_post(self, mock_api: object) -> None:
+        """Candidate with matching name but no 'id' field → no POST."""
+        list_without_id = GitHubResponse(
+            status_code=200,
+            body=[{"name": "agent-federation-baseline-v1"}],  # no id
+            error_message=None,
+        )
+        call_methods: list[str] = []
+
+        def side_effect(method: str, path: str, body: object = None, *, token: str | None = None) -> GitHubResponse:
+            call_methods.append(method)
+            if "/rulesets" in path and "includes_parents" in path:
+                return list_without_id
+            return GitHubResponse(status_code=200, body={}, error_message=None)
+
+        mock_api.side_effect = side_effect
+        result = ensure_governance_baseline(
+            REPO,
+            GovernanceCheck(compliance=ComplianceStatus.NON_CONFORMANT, default_branch="main"),
+        )
+        assert result.action is None
+        assert "POST" not in call_methods
+        assert Diagnostic.UNSUPPORTED_CONFIG in result.diagnostics
+
+    @patch("governance._protection.github_api")
+    def test_candidate_with_invalid_id_no_post(self, mock_api: object) -> None:
+        """Candidate with non-int 'id' → no POST."""
+        list_bad_id = GitHubResponse(
+            status_code=200,
+            body=[{"name": "agent-federation-baseline-v1", "id": "not-an-int"}],
+            error_message=None,
+        )
+        call_methods: list[str] = []
+
+        def side_effect(method: str, path: str, body: object = None, *, token: str | None = None) -> GitHubResponse:
+            call_methods.append(method)
+            if "/rulesets" in path and "includes_parents" in path:
+                return list_bad_id
+            return GitHubResponse(status_code=200, body={}, error_message=None)
+
+        mock_api.side_effect = side_effect
+        result = ensure_governance_baseline(
+            REPO,
+            GovernanceCheck(compliance=ComplianceStatus.NON_CONFORMANT, default_branch="main"),
+        )
+        assert result.action is None
+        assert "POST" not in call_methods
+
+    @patch("governance._protection.github_api")
+    def test_multiple_candidates_no_post(self, mock_api: object) -> None:
+        """Multiple same-named candidates → conflict, no POST."""
+        list_multi = GitHubResponse(
+            status_code=200,
+            body=[
+                {"name": "agent-federation-baseline-v1", "id": 1},
+                {"name": "agent-federation-baseline-v1", "id": 2},
+            ],
+            error_message=None,
+        )
+        call_methods: list[str] = []
+
+        def side_effect(method: str, path: str, body: object = None, *, token: str | None = None) -> GitHubResponse:
+            call_methods.append(method)
+            if "/rulesets" in path and "includes_parents" in path:
+                return list_multi
+            return GitHubResponse(status_code=200, body={}, error_message=None)
+
+        mock_api.side_effect = side_effect
+        result = ensure_governance_baseline(
+            REPO,
+            GovernanceCheck(compliance=ComplianceStatus.NON_CONFORMANT, default_branch="main"),
+        )
+        assert result.action is None
+        assert "POST" not in call_methods
+
+
+class TestBlocker7DiagnosticsTransported:
+    """Blocker 7: Apply diagnostics reach GovernanceResult and CLI."""
+
+    @patch("governance._protection.github_api")
+    def test_auth_missing_diagnostic_in_result(self, mock_api: object) -> None:
+        """401 on ruleset list → AUTH_MISSING diagnostic in result."""
+        def side_effect(method: str, path: str, body: object = None, *, token: str | None = None) -> GitHubResponse:
+            if "/rulesets" in path and "includes_parents" in path:
+                return GitHubResponse(status_code=401, body={"message": "Bad credentials"}, error_message="Bad credentials")
+            return GitHubResponse(status_code=200, body={}, error_message=None)
+
+        mock_api.side_effect = side_effect
+        result = ensure_governance_baseline(
+            REPO,
+            GovernanceCheck(compliance=ComplianceStatus.NON_CONFORMANT, default_branch="main"),
+        )
+        assert Diagnostic.AUTH_MISSING in result.diagnostics
+        assert result.action is None
+
+    @patch("governance._protection.github_api")
+    def test_permission_insufficient_in_result(self, mock_api: object) -> None:
+        """403 on ruleset create → PERMISSION_INSUFFICIENT in result."""
+        def side_effect(method: str, path: str, body: object = None, *, token: str | None = None) -> GitHubResponse:
+            if "/rulesets" in path and "includes_parents" in path:
+                return _RULESETS_LIST_EMPTY
+            if method == "POST" and "/rulesets" in path:
+                return GitHubResponse(status_code=403, body={"message": "Forbidden"}, error_message="Forbidden")
+            return GitHubResponse(status_code=200, body={}, error_message=None)
+
+        mock_api.side_effect = side_effect
+        result = ensure_governance_baseline(
+            REPO,
+            GovernanceCheck(compliance=ComplianceStatus.NON_CONFORMANT, default_branch="main"),
+        )
+        assert Diagnostic.PERMISSION_INSUFFICIENT in result.diagnostics
+        assert result.action is None
+
+    @patch("governance._protection.github_api")
+    def test_github_unreachable_in_result(self, mock_api: object) -> None:
+        """Network error → GITHUB_UNREACHABLE in result."""
+        def side_effect(method: str, path: str, body: object = None, *, token: str | None = None) -> GitHubResponse:
+            if "/rulesets" in path and "includes_parents" in path:
+                return _NETWORK_ERROR
+            return GitHubResponse(status_code=200, body={}, error_message=None)
+
+        mock_api.side_effect = side_effect
+        result = ensure_governance_baseline(
+            REPO,
+            GovernanceCheck(compliance=ComplianceStatus.NON_CONFORMANT, default_branch="main"),
+        )
+        assert Diagnostic.GITHUB_UNREACHABLE in result.diagnostics
+
+
+class TestBlocker8FinalCheckRequired:
+    """Blocker 8: Every action requires a final re-read; only CONFORMANT → Exit 0."""
+
+    @patch("governance._protection.github_api")
+    def test_skipped_has_final_check(self, mock_api: object) -> None:
+        """'skipped' action also produces a final_check (re-read)."""
+        def side_effect(method: str, path: str, body: object = None, *, token: str | None = None) -> GitHubResponse:
+            if "/rulesets" in path and "includes_parents" in path:
+                return _RULESETS_LIST_WITH_ID
+            if "/rulesets/" in path and method == "GET":
+                return _RULESETS_DETAIL_COMPATIBLE
+            if "/rules/branches/" in path:
+                return _RULES_FULL
+            if "/branches/" in path and "/protection" in path:
+                return _PROTECTION_404
+            return GitHubResponse(status_code=200, body={}, error_message=None)
+
+        mock_api.side_effect = side_effect
+        result = ensure_governance_baseline(
+            REPO,
+            GovernanceCheck(compliance=ComplianceStatus.NON_CONFORMANT, default_branch="main"),
+        )
+        assert result.action == "skipped"
+        # final_check MUST exist for all actions (Blocker 8)
+        assert result.final_check is not None
+        assert result.final_check.compliance == ComplianceStatus.CONFORMANT
+
+    @patch("governance._protection.github_api")
+    def test_skipped_conservative_has_final_check(self, mock_api: object) -> None:
+        """'skipped_conservative' also produces a final_check."""
+        # Ruleset with baseline + stricter extra rules
+        detail_stricter = GitHubResponse(
+            status_code=200,
+            body={
+                "id": 42, "name": "agent-federation-baseline-v1",
+                "target": "branch", "enforcement": "active",
+                "bypass_actors": [],
+                "conditions": {"ref_name": {"include": ["~DEFAULT_BRANCH"], "exclude": []}},
+                "rules": [
+                    {"type": "deletion"}, {"type": "non_fast_forward"},
+                    {"type": "pull_request", "parameters": {"required_approving_review_count": 1}},
+                    {"type": "required_linear_history"},
+                ],
+            },
+            error_message=None,
+        )
+
+        def side_effect(method: str, path: str, body: object = None, *, token: str | None = None) -> GitHubResponse:
+            if "/rulesets" in path and "includes_parents" in path:
+                return _RULESETS_LIST_WITH_ID
+            if "/rulesets/" in path and method == "GET":
+                return detail_stricter
+            if "/rules/branches/" in path:
+                return _RULES_FULL
+            if "/branches/" in path and "/protection" in path:
+                return _PROTECTION_404
+            return GitHubResponse(status_code=200, body={}, error_message=None)
+
+        mock_api.side_effect = side_effect
+        result = ensure_governance_baseline(
+            REPO,
+            GovernanceCheck(compliance=ComplianceStatus.NON_CONFORMANT, default_branch="main"),
+        )
+        assert result.action == "skipped_conservative"
+        assert result.final_check is not None
+
+    @patch("governance._protection.github_api")
+    def test_no_final_check_means_no_action(self, mock_api: object) -> None:
+        """action=None → no final_check, diagnostics explain failure."""
+        def side_effect(method: str, path: str, body: object = None, *, token: str | None = None) -> GitHubResponse:
+            if "/rulesets" in path and "includes_parents" in path:
+                return _RULESETS_LIST_WITH_ID
+            if "/rulesets/" in path and method == "GET":
+                return _RULESETS_DETAIL_DIVERGENT  # disabled → incompatible
+            if "/rules/branches/" in path:
+                return _RULES_EMPTY
+            if "/branches/" in path and "/protection" in path:
+                return _PROTECTION_404
+            return GitHubResponse(status_code=200, body={}, error_message=None)
+
+        mock_api.side_effect = side_effect
+        result = ensure_governance_baseline(
+            REPO,
+            GovernanceCheck(compliance=ComplianceStatus.NON_CONFORMANT, default_branch="main"),
+        )
+        assert result.action is None
+        assert result.final_check is None  # no action → no re-read
+        assert Diagnostic.UNSUPPORTED_CONFIG in result.diagnostics

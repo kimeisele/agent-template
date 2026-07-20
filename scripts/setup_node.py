@@ -608,16 +608,20 @@ def _run_governance_step(*, interactive: bool, apply_governance: bool) -> Compli
     result = ensure_governance_baseline(repo, check)
     print(f"  Action: {GREEN}{result.action or 'none'}{RESET}")
 
+    # Display apply-step diagnostics
+    for d in result.diagnostics:
+        print(f"  {YELLOW}Diagnostic: {d.value}{RESET}")
+    for detail in result.details:
+        print(f"  {DIM}{detail}{RESET}")
+
     if result.final_check is not None:
         print()
         _print_governance_check(result.final_check)
         return result.final_check.compliance
 
-    if result.action is None:
-        print(f"\n  {YELLOW}Could not apply baseline. See details above.{RESET}")
-        return ComplianceStatus.UNKNOWN
-
-    return check.compliance
+    # No final_check → action failed completely
+    print(f"\n  {YELLOW}Could not apply baseline.{RESET}")
+    return ComplianceStatus.UNKNOWN
 
 
 def _print_governance_check(check: GovernanceCheck) -> None:
@@ -793,18 +797,28 @@ def _run_governance_standalone() -> int:
     print("\n  Applying federation-baseline ruleset...")
     result = ensure_governance_baseline(repo, check)
     print(f"  Action: {GREEN}{result.action or 'none'}{RESET}")
+
+    # Display apply-step diagnostics
+    for d in result.diagnostics:
+        print(f"  {YELLOW}Diagnostic: {d.value}{RESET}")
+    for detail in result.details:
+        print(f"  {DIM}{detail}{RESET}")
+
     if result.final_check is not None:
         print()
         _print_governance_check(result.final_check)
         if result.final_check.compliance == ComplianceStatus.CONFORMANT:
             print(f"\n  {GREEN}Governance baseline applied successfully.{RESET}")
             return 0
-        print(f"\n  {YELLOW}Re-read did not confirm compliance.{RESET}")
-        return 1
-    if result.action is None:
-        print(f"\n  {YELLOW}Could not apply baseline — see diagnostics above.{RESET}")
+        if result.final_check.compliance == ComplianceStatus.NON_CONFORMANT:
+            print(f"\n  {YELLOW}Re-read did not confirm compliance.{RESET}")
+            return 1
+        print(f"\n  {YELLOW}Re-read returned unknown compliance.{RESET}")
         return 2
-    return 0
+
+    # No final_check → action failed completely
+    print(f"\n  {YELLOW}Could not apply baseline.{RESET}")
+    return 2
 
 
 if __name__ == "__main__":

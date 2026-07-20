@@ -76,4 +76,6 @@ class GovernanceResult:
 
     check: GovernanceCheck                                  # state before action
     action: str | None = None                               # "created", "skipped", "skipped_conservative", None
+    diagnostics: list[Diagnostic] = field(default_factory=list)  # apply-step diagnostics
+    details: list[str] = field(default_factory=list)             # human-readable apply details
     final_check: GovernanceCheck | None = None              # re-read after action; must be CONFORMANT for success
