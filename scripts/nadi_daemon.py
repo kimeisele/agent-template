@@ -1,5 +1,8 @@
 #!/usr/bin/env python3
-"""NADI federation daemon — heartbeat + inbox sync for new nodes."""
+"""NADI federation daemon — heartbeat + inbox sync for new nodes.
+
+Requires nadi-kit. Install with: pip install -e '.[federation]'
+"""
 
 import argparse
 import logging
@@ -7,10 +10,22 @@ import sys
 import time
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from nadi_kit import NadiNode
+REPO_ROOT = Path(__file__).resolve().parents[1]
+
+try:
+    from nadi_kit import NadiNode
+except ImportError:
+    print(
+        "nadi-kit is required for federation operations.\n"
+        "Install with: pip install -e '.[federation]'",
+        file=sys.stderr,
+    )
+    raise SystemExit(1)
 
 log = logging.getLogger("nadi_daemon")
+
+_CANONICAL_PEER = REPO_ROOT / "data" / "federation" / "peer.json"
+
 
 def handle_heartbeat(msg):
     log.info("heartbeat from %s (health=%.2f)", msg.source, msg.payload.get("health", 0))
@@ -33,14 +48,30 @@ def main():
     )
     args = parser.parse_args()
 
-    peer_json = Path("data/federation/peer.json")
-    if not peer_json.exists():
-        print("ERROR: data/federation/peer.json not found. Run scripts/setup_node.py first.")
+    if not _CANONICAL_PEER.exists():
+        print(
+            f"ERROR: {_CANONICAL_PEER} not found. "
+            f"Run scripts/setup_node.py first.",
+            file=sys.stderr,
+        )
         return 1
 
-    node = NadiNode.from_peer_json(peer_json)
+    try:
+        node = NadiNode.from_peer_json(_CANONICAL_PEER)
+    except Exception as exc:
+        print(f"ERROR: failed to load node from {_CANONICAL_PEER}: {exc}",
+              file=sys.stderr)
+        return 1
+
     node.on("heartbeat", handle_heartbeat)
-    log.info("NADI daemon started for %s", node.agent_id)
+    log.info("NADI daemon started for %s (peer: %s)", node.agent_id, _CANONICAL_PEER)
+
+    # Show outbox state on startup
+    try:
+        outbox = node.transport.read_outbox()
+        log.info("outbox: %d pending message(s)", len(outbox))
+    except Exception:
+        pass
 
     # Load HeadAgent subclass if specified
     head_agent_instance = None
@@ -60,8 +91,7 @@ def main():
         cycle += 1
         log.info("=== sync cycle %d ===", cycle)
 
-        # HeadAgent cognitive cycle (perceive → judge → act → learn → emit)
-        # or plain heartbeat if no HeadAgent specified
+        # HeadAgent cognitive cycle or plain heartbeat
         if head_agent_instance is not None:
             try:
                 result = head_agent_instance.heartbeat()

@@ -477,13 +477,48 @@ def _write_peer_json(config: dict) -> None:
         },
     }
 
+    # Preserve existing identity fields that were set externally (e.g. public_key)
+    existing_identity: dict = {}
+    if peer_path.exists():
+        try:
+            existing = json.loads(peer_path.read_text())
+            if isinstance(existing, dict) and "identity" in existing:
+                existing_identity = existing.get("identity", {})
+        except json.JSONDecodeError:
+            # Corrupt peer.json — warn but do not overwrite.
+            print(
+                f"    {YELLOW}warning: {peer_path} is not valid JSON. "
+                f"Skipping peer.json update to preserve existing data.{RESET}"
+            )
+            return
+
+    # Merge: keep existing public_key, update config-derived fields
+    if existing_identity and existing_identity.get("public_key"):
+        peer_data["identity"]["public_key"] = existing_identity["public_key"]
+
     peer_path.write_text(json.dumps(peer_data, indent=2) + "\n")
 
-    # Ensure inbox/outbox exist
+    # Ensure inbox/outbox exist without corrupting existing data
     for fname in ("nadi_inbox.json", "nadi_outbox.json"):
         fpath = peer_dir / fname
-        if not fpath.exists() or fpath.read_text().strip() == "":
+        if not fpath.exists():
             fpath.write_text("[]\n")
+        elif fpath.read_text().strip() == "":
+            fpath.write_text("[]\n")
+        else:
+            # File exists with content — validate it is a JSON array
+            try:
+                data = json.loads(fpath.read_text())
+                if not isinstance(data, list):
+                    print(
+                        f"    {YELLOW}warning: {fpath} is not a JSON array. "
+                        f"Not modified.{RESET}"
+                    )
+            except json.JSONDecodeError:
+                print(
+                    f"    {YELLOW}warning: {fpath} is not valid JSON. "
+                    f"Not modified — please repair manually.{RESET}"
+                )
 
     # Ensure subdirectories exist
     (peer_dir / "reports").mkdir(exist_ok=True)
