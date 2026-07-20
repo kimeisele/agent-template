@@ -36,7 +36,10 @@ from governance._protection import (  # noqa: E402
     ensure_governance_baseline,
     inspect_governance,
 )
-from governance._repo import _parse_github_full_name, detect_repository  # noqa: E402
+from governance._repo import detect_repository  # noqa: E402
+
+# Import moved to federation_utils in Gate 1
+from federation_utils import _parse_github_full_name  # noqa: E402
 
 # ── helpers ────────────────────────────────────────────────────────────────
 

@@ -10,8 +10,10 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
+import sys
 from pathlib import Path
+
+from federation_utils import resolve_repo_identity
 
 
 def _load_descriptor(repo_root: Path) -> dict:
@@ -31,11 +33,18 @@ def _load_capability_manifest(repo_root: Path) -> dict:
 def main() -> int:
     parser = argparse.ArgumentParser(description="Render agent card")
     parser.add_argument("--output", default=".well-known/agent.json")
-    parser.add_argument("--repo", default=os.environ.get("GITHUB_REPOSITORY", "kimeisele/agent-template"))
+    parser.add_argument("--repo", default=None, help="Explicit owner/repo override (test/offline only)")
     args = parser.parse_args()
 
     repo_root = Path(__file__).resolve().parents[1]
-    repo_owner, repo_name = args.repo.split("/", 1)
+
+    try:
+        repo = resolve_repo_identity(repo_root, explicit_repo=args.repo)
+    except (RuntimeError, ValueError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+
+    repo_owner, repo_name = repo.split("/", 1)
     descriptor = _load_descriptor(repo_root)
     manifest = _load_capability_manifest(repo_root)
     name = descriptor.get("display_name", repo_name)

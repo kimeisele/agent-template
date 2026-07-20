@@ -77,15 +77,29 @@ def _check_topic() -> bool | None:
     return None
 
 
+def _repo_arg() -> list[str]:
+    """Return ``['--repo', 'owner/name']`` if a saved config exists, else ``[]``."""
+    config_path = REPO_ROOT / ".federation-setup.json"
+    if not config_path.exists():
+        return []
+    try:
+        config = json.loads(config_path.read_text())
+    except (json.JSONDecodeError, OSError):
+        return []
+    repo = config.get("github_repo")
+    return ["--repo", repo] if isinstance(repo, str) and repo else []
+
+
 def main() -> int:
     print(f"\n{BOLD}Federation Node Quickstart{RESET}\n")
 
     ok = True
+    repo_args = _repo_arg()
 
     # Step 1: Generate
     print(f"{BOLD}1. Generate descriptors{RESET}")
-    ok &= _run("Federation descriptor", "scripts/render_federation_descriptor.py")
-    ok &= _run("A2A Agent Card", "scripts/render_agent_card.py")
+    ok &= _run("Federation descriptor", "scripts/render_federation_descriptor.py", *repo_args)
+    ok &= _run("A2A Agent Card", "scripts/render_agent_card.py", *repo_args)
     ok &= _run("Authority feed", "scripts/export_authority_feed.py")
 
     # Step 2: Validate
@@ -136,8 +150,8 @@ def main() -> int:
     print()
     if ok:
         print(f"{GREEN}{BOLD}Your federation node is ready.{RESET}")
-        print(f"Next: customize docs/authority/charter.md and docs/authority/capabilities.json")
-        print(f"Then: push to main — your node will be discoverable across the federation\n")
+        print("Next: customize docs/authority/charter.md and docs/authority/capabilities.json")
+        print("Then: push to main — your node will be discoverable across the federation\n")
     else:
         print(f"{RED}{BOLD}Some checks failed. See above for details.{RESET}\n")
 

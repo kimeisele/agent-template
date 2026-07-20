@@ -28,6 +28,7 @@ _SCRIPTS = str(Path(__file__).resolve().parent)
 if _SCRIPTS not in sys.path:
     sys.path.insert(0, _SCRIPTS)
 
+from federation_utils import repo_from_git_remote  # noqa: E402
 from governance._models import (  # noqa: E402
     BypassState,
     ComplianceStatus,
@@ -199,6 +200,75 @@ def _ask_yn(prompt: str, default: bool = True) -> bool:
 
 
 # ── File generators ───────────────────────────────────────────────────────
+
+
+_BLOCK_BEGIN = "<!-- BEGIN FEDERATION NODE IDENTITY -->"
+_BLOCK_END = "<!-- END FEDERATION NODE IDENTITY -->"
+
+
+def _write_readme_identity(config: dict) -> None:
+    """Insert or update the federation node identity block in README.md.
+
+    Only content between the ``BEGIN`` / ``END`` markers is touched;
+    everything outside the block is preserved byte-for-byte.
+    """
+    readme_path = REPO_ROOT / "README.md"
+    tier = TIERS[config["tier"]]
+
+    block_lines = [
+        _BLOCK_BEGIN,
+        f"> **Node:** {config['display_name']}",
+        f"> **Repository:** {config['github_repo']}",
+        f"> **Tier:** {tier['label']}",
+        f"> **Role:** {tier['description']}",
+        ">  ",
+        "> ℹ️ The content above is managed by `scripts/setup_node.py`.",
+        "> The rest of this README is the generic federation-node handbook.",
+        _BLOCK_END,
+    ]
+    block_text = "\n".join(block_lines)
+
+    if not readme_path.exists():
+        # No README — write one containing only the identity block.
+        readme_path.write_text(
+            block_text + "\n\n_No README content yet — add your documentation here._\n"
+        )
+        return
+
+    original = readme_path.read_text()
+
+    # Count markers
+    begin_count = original.count(_BLOCK_BEGIN)
+    end_count = original.count(_BLOCK_END)
+
+    if begin_count == 0 and end_count == 0:
+        # No block present — insert after the first heading line.
+        lines = original.splitlines(keepends=True)
+        result_lines: list[str] = []
+        inserted = False
+        for line in lines:
+            result_lines.append(line)
+            if not inserted and line.startswith("# "):
+                # Insert identity block after the title heading
+                result_lines.append("\n")
+                result_lines.append(block_text)
+                result_lines.append("\n")
+                inserted = True
+        readme_path.write_text("".join(result_lines))
+        return
+
+    if begin_count != 1 or end_count != 1:
+        print(
+            f"  {YELLOW}warning: README identity block markers are malformed "
+            f"(BEGIN={begin_count}, END={end_count}). "
+            f"Skipping README update to avoid damage.{RESET}"
+        )
+        return
+
+    # Replace existing block content
+    before_block = original[: original.index(_BLOCK_BEGIN)]
+    after_block = original[original.index(_BLOCK_END) + len(_BLOCK_END):]
+    readme_path.write_text(before_block + block_text + after_block)
 
 
 def _write_charter(config: dict) -> None:
@@ -407,9 +477,20 @@ def interactive_setup() -> dict:
     print(f"{BOLD}═══ Phase 1: Identity ═══{RESET}\n")
 
     display_name = _ask("Node name", "My Federation Node")
-    repo_name = display_name.lower().replace(" ", "-")
-    repo_name = _ask("Repository name", repo_name)
-    github_org = _ask("GitHub org/user", "kimeisele")
+
+    # Resolve repository identity from the actual git remote.
+    detected_repo = repo_from_git_remote(REPO_ROOT)
+    if detected_repo:
+        detected_org, detected_slug = detected_repo.split("/", 1)
+        print(f"\n  {DIM}Detected repository: {BOLD}{detected_repo}{RESET}")
+        github_org = _ask("GitHub org/user", detected_org)
+        repo_name = _ask("Repository slug", detected_slug)
+    else:
+        print(f"\n  {YELLOW}No git remote found — repository identity must be explicit.{RESET}")
+        repo_name = display_name.lower().replace(" ", "-")
+        repo_name = _ask("Repository slug", repo_name)
+        github_org = _ask("GitHub org/user", "kimeisele")
+
     description = _ask("One-line description", f"{display_name} — a federation node")
 
     tier = _ask_choice(
@@ -482,6 +563,9 @@ def apply_config(config: dict, *, interactive: bool, apply_governance: bool) -> 
 
     _write_capabilities(config)
     print(f"    {GREEN}✓{RESET} docs/authority/capabilities.json")
+
+    _write_readme_identity(config)
+    print(f"    {GREEN}✓{RESET} README.md (identity block)")
 
     _regenerate(config)
     print(f"    {GREEN}✓{RESET} .well-known/agent-federation.json")
@@ -724,6 +808,9 @@ def main() -> int:
     parser.add_argument("--name", default="My Federation Node")
     parser.add_argument("--role", default="relay", choices=list(TIERS.keys()))
     parser.add_argument("--org", default="kimeisele")
+    parser.add_argument("--repo", default=None,
+                        help="Explicit owner/repo override (offline/test only). "
+                             "When omitted, the git remote is authoritative.")
     parser.add_argument("--zone", default="", choices=[""] + list(CITY_ZONES.keys()))
     parser.add_argument("--description", default="")
     args = parser.parse_args()
@@ -749,11 +836,31 @@ def main() -> int:
 
     # ── Normal setup flow ──
     if args.non_interactive:
-        repo_name = args.name.lower().replace(" ", "-")
+        # Derive repository identity.
+        if args.repo:
+            # Explicit override (offline/test only).
+            github_repo = args.repo
+            repo_name = args.repo.split("/", 1)[1]
+        else:
+            detected_repo = repo_from_git_remote(REPO_ROOT)
+            if detected_repo:
+                github_repo = detected_repo
+                repo_name = detected_repo.split("/", 1)[1]
+            else:
+                # No remote and no explicit --repo — fall back to CLI args
+                # (offline/test mode).  Remote write operations will fail.
+                repo_name = args.name.lower().replace(" ", "-")
+                github_repo = f"{args.org}/{repo_name}"
+                print(
+                    f"\n  {YELLOW}warning: no git remote found — using guessed repository "
+                    f"identity {github_repo}. Remote write operations will target this "
+                    f"repository. Use --repo to override explicitly.{RESET}",
+                    file=sys.stderr,
+                )
         config = {
             "display_name": args.name,
             "repo_name": repo_name,
-            "github_repo": f"{args.org}/{repo_name}",
+            "github_repo": github_repo,
             "description": args.description or f"{args.name} — a federation node",
             "tier": args.role,
             "domains": [],

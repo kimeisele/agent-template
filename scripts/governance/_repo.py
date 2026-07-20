@@ -5,18 +5,18 @@ local git information is never used as sole authority.
 """
 from __future__ import annotations
 
-import subprocess
 from pathlib import Path
 
-from federation_utils import github_api
+from federation_utils import github_api, repo_from_git_remote
 from governance._models import Diagnostic, RepoInfo
 
 
 def detect_repository(root: Path) -> tuple[RepoInfo | None, Diagnostic]:
     """Discover the GitHub repository this checkout belongs to.
 
-    Parses ``git remote get-url origin`` to extract *owner/repo*, then
-    confirms the default branch via ``GET /repos/{owner}/{repo}``.
+    Extracts *owner/repo* from the ``origin`` git remote via
+    :func:`federation_utils.repo_from_git_remote`, then confirms the
+    default branch via ``GET /repos/{owner}/{repo}``.
 
     Returns:
         ``(RepoInfo, Diagnostic.OK)`` on success.
@@ -26,19 +26,7 @@ def detect_repository(root: Path) -> tuple[RepoInfo | None, Diagnostic]:
         ``(None, Diagnostic.AUTH_MISSING)`` on 401 from the API.
     """
     # ── 1. Extract owner/repo from git remote ──────────────────────────
-    try:
-        result = subprocess.run(
-            ["git", "remote", "get-url", "origin"],
-            capture_output=True, text=True, cwd=str(root),
-        )
-    except (OSError, FileNotFoundError):
-        return None, Diagnostic.REPO_NOT_FOUND
-
-    if result.returncode != 0:
-        return None, Diagnostic.REPO_NOT_FOUND
-
-    remote_url = result.stdout.strip()
-    full_name = _parse_github_full_name(remote_url)
+    full_name = repo_from_git_remote(root)
     if full_name is None:
         return None, Diagnostic.REPO_NOT_FOUND
 
@@ -58,36 +46,3 @@ def detect_repository(root: Path) -> tuple[RepoInfo | None, Diagnostic]:
         return None, Diagnostic.GITHUB_UNREACHABLE
 
     return RepoInfo(full_name=full_name, default_branch=default_branch), Diagnostic.OK
-
-
-def _parse_github_full_name(remote_url: str) -> str | None:
-    """Extract ``owner/repo`` from a git remote URL.
-
-    Supports:
-        - ``https://github.com/owner/repo.git``
-        - ``git@github.com:owner/repo.git``
-        - ``ssh://git@github.com/owner/repo.git``
-
-    Trailing ``.git`` is stripped.  Returns ``None`` for non-GitHub URLs.
-    """
-    url = remote_url.rstrip("/")
-
-    # https://github.com/owner/repo.git
-    if "github.com/" in url:
-        after = url.split("github.com/", 1)[1]
-        name = after.removesuffix(".git").strip("/")
-        parts = name.split("/")
-        if len(parts) >= 2:
-            return f"{parts[0]}/{parts[1]}"
-        return None
-
-    # git@github.com:owner/repo.git
-    if "github.com:" in url:
-        after = url.split("github.com:", 1)[1]
-        name = after.removesuffix(".git").strip("/")
-        parts = name.split("/")
-        if len(parts) >= 2:
-            return f"{parts[0]}/{parts[1]}"
-        return None
-
-    return None

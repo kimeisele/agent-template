@@ -2,10 +2,10 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
+import sys
 from pathlib import Path
 
-from federation_utils import display_name
+from federation_utils import display_name, resolve_repo_identity
 
 
 def _load_capabilities(repo_root: Path) -> list[str]:
@@ -19,14 +19,21 @@ def _load_capabilities(repo_root: Path) -> list[str]:
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--output", default=".well-known/agent-federation.json")
-    parser.add_argument("--repo", default=os.environ.get("GITHUB_REPOSITORY", "kimeisele/agent-template"))
+    parser.add_argument("--repo", default=None, help="Explicit owner/repo override (test/offline only)")
     parser.add_argument("--status", default="active")
     parser.add_argument("--layer", default="node")
     parser.add_argument("--intent", nargs="*", default=["public_authority_page"])
     args = parser.parse_args()
 
     repo_root = Path(__file__).resolve().parents[1]
-    repo_owner, repo_name = args.repo.split("/", 1)
+
+    try:
+        repo = resolve_repo_identity(repo_root, explicit_repo=args.repo)
+    except (RuntimeError, ValueError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+
+    repo_owner, repo_name = repo.split("/", 1)
     payload = {
         "kind": "agent_federation_descriptor",
         "version": 1,
