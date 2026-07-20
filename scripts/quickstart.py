@@ -16,6 +16,8 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[1]
 GREEN = "\033[32m"
 RED = "\033[31m"
+YELLOW = "\033[33m"
+CYAN = "\033[36m"
 BOLD = "\033[1m"
 RESET = "\033[0m"
 
