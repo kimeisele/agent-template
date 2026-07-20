@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -330,6 +331,50 @@ def _regenerate(config: dict) -> None:
             print(f"    {YELLOW}warning: {script} failed: {result.stderr.strip()[:80]}{RESET}")
 
 
+def _set_federation_topic(repo_full_name: str) -> bool:
+    """Set the ``agent-federation-node`` topic on *repo_full_name*.
+
+    Tries ``gh`` CLI first, then falls back to ``GITHUB_TOKEN`` /
+    ``GH_TOKEN`` environment variables with ``curl``.
+
+    Returns ``True`` if the topic was applied successfully.
+    """
+    TOPIC = "agent-federation-node"
+
+    # 1. Try gh CLI
+    try:
+        result = subprocess.run(
+            ["gh", "repo", "edit", repo_full_name, "--add-topic", TOPIC],
+            capture_output=True, text=True, timeout=15,
+        )
+        if result.returncode == 0:
+            return True
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        pass
+
+    # 2. Try GITHUB_TOKEN / GH_TOKEN env var via curl
+    token = os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
+    if token:
+        try:
+            result = subprocess.run(
+                [
+                    "curl", "-sf", "-X", "PUT",
+                    f"https://api.github.com/repos/{repo_full_name}/topics",
+                    "-H", "Accept: application/vnd.github+json",
+                    "-H", f"Authorization: token {token}",
+                    "-H", "Content-Type: application/json",
+                    "-d", f'{{"names":["{TOPIC}"]}}',
+                ],
+                capture_output=True, text=True, timeout=15,
+            )
+            if result.returncode == 0:
+                return True
+        except (FileNotFoundError, subprocess.TimeoutExpired):
+            pass
+
+    return False
+
+
 # ── Main wizard ───────────────────────────────────────────────────────────
 
 
@@ -466,11 +511,17 @@ def apply_config(config: dict) -> None:
     print(f"  Register manually when ready:")
     print(f"    {CYAN}https://github.com/{AGENT_CITY_REPO}/issues/new?template=agent-registration.yml{RESET}")
 
+    # Federation topic
+    topic_ok = _set_federation_topic(config["github_repo"])
+
     # Next steps
     print(f"\n{BOLD}── Ready ──{RESET}\n")
     print(f"  1. Review your charter:  {CYAN}docs/authority/charter.md{RESET}")
     print(f"  2. Push to GitHub:       {CYAN}git add -A && git commit -m 'Initialize federation node' && git push{RESET}")
-    print(f"  3. Add the topic:        {CYAN}gh repo edit --add-topic agent-federation-node{RESET}")
+    if topic_ok:
+        print(f"  3. Topic:                {GREEN}agent-federation-node ✓{RESET}")
+    else:
+        print(f"  3. Add the topic:        {CYAN}gh repo edit --add-topic agent-federation-node{RESET}")
     print(f"  4. Register with city:   {CYAN}(link above){RESET}")
     print(f"  5. Start NADI daemon:    {CYAN}python scripts/nadi_daemon.py --once{RESET}")
     print(f"  6. Send a message:       {CYAN}python scripts/nadi_send.py --to agent-internet --op heartbeat{RESET}")

@@ -56,6 +56,25 @@ def _check_json(label: str, path: Path, required_fields: set[str]) -> bool:
     return True
 
 
+def _check_topic() -> bool | None:
+    """Check that ``agent-federation-node`` is set on the GitHub repo.
+
+    Returns ``True`` if present, ``False`` if absent, ``None`` if the
+    check could not be performed (missing ``gh`` CLI or token).
+    """
+    try:
+        result = subprocess.run(
+            ["gh", "repo", "view", "--json", "topics"],
+            capture_output=True, text=True, timeout=10, cwd=str(REPO_ROOT),
+        )
+        if result.returncode == 0:
+            topics: list[str] = json.loads(result.stdout).get("topics", [])
+            return "agent-federation-node" in topics
+    except (FileNotFoundError, subprocess.TimeoutExpired, json.JSONDecodeError):
+        pass
+    return None
+
+
 def main() -> int:
     print(f"\n{BOLD}Federation Node Quickstart{RESET}\n")
 
@@ -98,12 +117,25 @@ def main() -> int:
     print(f"\n{BOLD}4. Peer discovery (seed-based){RESET}")
     _run("Discover peers", "scripts/discover_federation_peers.py", "--seeds-only", "--output", ".federation/peers.json")
 
+    # Step 5: Federation topic
+    print(f"\n{BOLD}5. Federation topic{RESET}")
+    topic_set = _check_topic()
+    if topic_set is True:
+        print(f"  agent-federation-node {GREEN}✓{RESET}")
+    elif topic_set is False:
+        print(f"  {RED}agent-federation-node NOT set{RESET}")
+        print(f"  Run: {CYAN}gh repo edit --add-topic agent-federation-node{RESET}")
+        ok = False
+    else:
+        print(f"  {YELLOW}Cannot verify (gh CLI not available){RESET}")
+        print(f"  Ensure the topic is set: {CYAN}gh repo edit --add-topic agent-federation-node{RESET}")
+
     # Summary
     print()
     if ok:
         print(f"{GREEN}{BOLD}Your federation node is ready.{RESET}")
         print(f"Next: customize docs/authority/charter.md and docs/authority/capabilities.json")
-        print(f"Then: push to main and add the 'agent-federation-node' topic on GitHub\n")
+        print(f"Then: push to main — your node will be discoverable across the federation\n")
     else:
         print(f"{RED}{BOLD}Some checks failed. See above for details.{RESET}\n")
 
