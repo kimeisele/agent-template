@@ -306,11 +306,14 @@ class TestTemplateResidue:
 
         caps_dest = tmp_path / "docs" / "authority"
         caps_dest.mkdir(parents=True, exist_ok=True)
-        caps_src = _SCRIPTS.parent / "docs" / "authority" / "capabilities.json"
-        if caps_src.exists():
-            (caps_dest / "capabilities.json").write_text(caps_src.read_text())
-        else:
-            (caps_dest / "capabilities.json").write_text(json.dumps({"skills": []}))
+        # Use a clean capability manifest without template-specific identity.
+        (caps_dest / "capabilities.json").write_text(json.dumps({
+            "kind": "agent_capability_manifest",
+            "version": 1,
+            "skills": [{"id": "test", "name": "Test", "description": "Test"}],
+            "federation_interfaces": {"produces": [], "consumes": [], "protocols": []},
+            "description": "Custom node — a federation node",
+        }))
 
         desc_out = tmp_path / ".well-known" / "agent-federation.json"
         subprocess.run(
