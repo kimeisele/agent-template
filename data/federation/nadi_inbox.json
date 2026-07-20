@@ -6,7 +6,7 @@
     "payload": {
       "agent_id": "agent-research",
       "health": 1.0,
-      "timestamp": 1784549899.3166814,
+      "timestamp": 1784558167.9550416,
       "capabilities": [
         "research",
         "federation_relay"
@@ -16,12 +16,204 @@
       "node_id": "ag_3310b9b3a356e672",
       "public_key": "176d871b9dcd73918872957db83cd46c1883059bb5fbc8c34b697104e36753c8"
     },
-    "timestamp": 1784549899.5859585,
+    "timestamp": 1784558168.1113503,
     "priority": 1,
     "correlation_id": "",
     "ttl_s": 900.0,
-    "id": "1eec7bcf-ee3a-4082-86cf-7f8575766273",
-    "payload_hash": "7daec00286bbef3b58a9d8d8fedeb14b3c63c9be249cb5eae9aeb17da617e7e9",
-    "signature": "ezyTEc5qBOstcSHBRpkYgN1S0uRrrcCNssDKu/5iZr+c6iWZt481AP4ZoTEsDbiVkCdDs6zFveTYxT+YxltEDg=="
+    "id": "1c838ead-558a-400a-bf43-5ac62a04b330",
+    "payload_hash": "66760299af96cb175525098f7dc9f5cbae37dc6730707b31d9cd1e7d25eff3ad",
+    "signature": "TnI+ChszIhqXTI+MY09vtkKwaTuQRm7G6MhvyAFHLbWyIEB3f5KslDpkw3rF4gZP9j8+CIxyFx7hZSxAff4SAQ=="
+  },
+  {
+    "source": "ag_fe4ef1db379bf154",
+    "target": "agent-template",
+    "operation": "heartbeat",
+    "payload": {
+      "agent_id": "test-node",
+      "health": 1.0,
+      "timestamp": 1784557562.94033,
+      "capabilities": [
+        "test"
+      ],
+      "repo": "test-org/test-node",
+      "version": "0.1.0",
+      "node_id": "ag_fe4ef1db379bf154",
+      "public_key": "31b5a70d1cfdc287483319a622be18652250b2194eaae75ca9335d74fec83cab"
+    },
+    "timestamp": 1784557564.302617,
+    "priority": 1,
+    "correlation_id": "",
+    "ttl_s": 900.0,
+    "id": "68a99fbf-3243-402e-b9a6-4d19801c0b10",
+    "payload_hash": "57764dadd662c2bc101febe36dbaa28bc3031e2d0d8f1ad51ce9f2ef2c64e058",
+    "signature": "uRgSxEQTHSFMEbmfl9niXYxVdF3ISOH/y2T5L/0HtAYRhVH+NmJSqtXUw9DFE4rH1ezLJ+jaorajuNu4kHx4DA=="
+  },
+  {
+    "source": "ag_a465ca99b657ef51",
+    "target": "agent-template",
+    "operation": "heartbeat",
+    "payload": {
+      "agent_id": "test-node",
+      "health": 1.0,
+      "timestamp": 1784557587.001361,
+      "capabilities": [
+        "test"
+      ],
+      "repo": "test-org/test-node",
+      "version": "0.1.0",
+      "node_id": "ag_a465ca99b657ef51",
+      "public_key": "f520c903c47bd8c9631dadd769417d5382e1e24a13660b665f98dad7f8969965"
+    },
+    "timestamp": 1784557587.813501,
+    "priority": 1,
+    "correlation_id": "",
+    "ttl_s": 900.0,
+    "id": "2272cffc-781c-466f-93ae-b8507454d32f",
+    "payload_hash": "d25e811f57424ee5d11be721ff516e11bf29af4bbeb5b15cec530efc91688e6c",
+    "signature": "O8aP3piF9ISSJEq3DeFFWPhI22rBjRbfvkV9ZHfm+29D6rP4NP+R5cWIOcKdnmpi81W4VNH9MuDBlgwYoonTAw=="
+  },
+  {
+    "source": "ag_3b9cb481986b162e",
+    "target": "agent-template",
+    "operation": "heartbeat",
+    "payload": {
+      "agent_id": "test-node",
+      "health": 1.0,
+      "timestamp": 1784557683.035667,
+      "capabilities": [
+        "test"
+      ],
+      "repo": "test-org/test-node",
+      "version": "0.1.0",
+      "node_id": "ag_3b9cb481986b162e",
+      "public_key": "e86a9d5c2e1b2ed8023566b313ce4021d3af0be72113d72e83b7f8aefe7548c8"
+    },
+    "timestamp": 1784557684.324214,
+    "priority": 1,
+    "correlation_id": "",
+    "ttl_s": 900.0,
+    "id": "259f0203-9495-4c86-ba28-b4a51d3a41cd",
+    "payload_hash": "fb5cfc37e262a42f5e89c963963fcebb354f5f261b31429f07e4eb667ee1678d",
+    "signature": "jAhe3EamAGTpy0sbDW/HPuJSoIvkANHUeze/MQE2POw6lfikO+pKYnYU6gtTRAHMWMIh1RESv2aXWrsBSC1JAw=="
+  },
+  {
+    "source": "ag_61b9c79562aa3865",
+    "target": "agent-template",
+    "operation": "heartbeat",
+    "payload": {
+      "agent_id": "test-node",
+      "health": 1.0,
+      "timestamp": 1784557705.615406,
+      "capabilities": [
+        "test"
+      ],
+      "repo": "test-org/test-node",
+      "version": "0.1.0",
+      "node_id": "ag_61b9c79562aa3865",
+      "public_key": "642d371032c756dbfe73dbc9712480dfc61860331757078d894f2f66ec696db9"
+    },
+    "timestamp": 1784557706.5505018,
+    "priority": 1,
+    "correlation_id": "",
+    "ttl_s": 900.0,
+    "id": "f4f5c58e-a6dd-4d43-ae3b-991e4929dea2",
+    "payload_hash": "9bc37c50da773ac4517692b6fdecbb6f51bc249db5c91b1eb38df9aef7e60823",
+    "signature": "S96rIyLq232XGNA5I2ZwBFZFOYbJmmVZwj54X3b0GLg5ae6tOsQQ0HBo+LFlR9LR8xQzUkoL1UK1erk297lWCA=="
+  },
+  {
+    "source": "ag_7fea7c5cc7bbea0d",
+    "target": "agent-template",
+    "operation": "heartbeat",
+    "payload": {
+      "agent_id": "test-node",
+      "health": 1.0,
+      "timestamp": 1784557814.696413,
+      "capabilities": [
+        "test"
+      ],
+      "repo": "test-org/test-node",
+      "version": "0.1.0",
+      "node_id": "ag_7fea7c5cc7bbea0d",
+      "public_key": "12d27af16a62b3c39f0b6eaf6a19f370ba647d54d9e0e53c8e4c68220944074c"
+    },
+    "timestamp": 1784557816.003972,
+    "priority": 1,
+    "correlation_id": "",
+    "ttl_s": 900.0,
+    "id": "7c7f7c4d-1e11-42fc-b983-55d4781b279c",
+    "payload_hash": "d43ecd4e590862fd44270cf65f22a84b667a07c8eb8083707358b9f483562986",
+    "signature": "joQGR2kEpVm3dtd2oUWnAhghwEp5duTAEGUaxM6IS8oDzPZesoSG8B7r7cmgtoiFfMysKLb4AVRFs7X0OxtABQ=="
+  },
+  {
+    "source": "ag_d8a04e8bcfef4cbb",
+    "target": "agent-template",
+    "operation": "heartbeat",
+    "payload": {
+      "agent_id": "test-node",
+      "health": 1.0,
+      "timestamp": 1784557837.938399,
+      "capabilities": [
+        "test"
+      ],
+      "repo": "test-org/test-node",
+      "version": "0.1.0",
+      "node_id": "ag_d8a04e8bcfef4cbb",
+      "public_key": "8eaf8394a474310761ae3966c740b0ee6c4e66b70d78d9319098db272eb62b6b"
+    },
+    "timestamp": 1784557838.928235,
+    "priority": 1,
+    "correlation_id": "",
+    "ttl_s": 900.0,
+    "id": "402441da-d08b-4067-891b-59b3130c1bfe",
+    "payload_hash": "31c13baa946065c7092959b72d5e1ec961c2022fcdb71049a71a641a0b49fa67",
+    "signature": "vaopaejl85XKj1Xe33rqIvbyeLww7o63XfYOlp++uFQIy21Atgj+4kioldyyd+ysPvMftnomN5gxNAB2u6u7Bw=="
+  },
+  {
+    "source": "ag_9a3c68a44ac7cd2e",
+    "target": "agent-template",
+    "operation": "heartbeat",
+    "payload": {
+      "agent_id": "test-node",
+      "health": 1.0,
+      "timestamp": 1784557925.86018,
+      "capabilities": [
+        "test"
+      ],
+      "repo": "test-org/test-node",
+      "version": "0.1.0",
+      "node_id": "ag_9a3c68a44ac7cd2e",
+      "public_key": "08dedecfba9ca573d634c5e381b903fe0d9335beaa01386ea98d22c02db92c6e"
+    },
+    "timestamp": 1784557927.010993,
+    "priority": 1,
+    "correlation_id": "",
+    "ttl_s": 900.0,
+    "id": "ac30b16c-b7dd-45ec-a985-456ebd02cf2b",
+    "payload_hash": "74aa90b9727375c9e76f168a401903efcf22d07e3ad1fbf00f65a6ef3cc13be8",
+    "signature": "UVYifGohFM4N1J4P5qYMUtN4I0P8ZjCU+uuwdVhUF6Rv4IRI1at7mU0fhIDcN9WZcgi2AXnZK9GAYWe0xyW0BA=="
+  },
+  {
+    "source": "ag_82780852c62eddd3",
+    "target": "agent-template",
+    "operation": "heartbeat",
+    "payload": {
+      "agent_id": "test-node",
+      "health": 1.0,
+      "timestamp": 1784557949.949038,
+      "capabilities": [
+        "test"
+      ],
+      "repo": "test-org/test-node",
+      "version": "0.1.0",
+      "node_id": "ag_82780852c62eddd3",
+      "public_key": "c80ad32ab674ce28da5a20c8fd47101022fb8b3be151210385ce516cf6915a4f"
+    },
+    "timestamp": 1784557950.6539571,
+    "priority": 1,
+    "correlation_id": "",
+    "ttl_s": 900.0,
+    "id": "0acaddd7-f07c-44b3-9a0f-9232f41c7d23",
+    "payload_hash": "d3f3fbf16f1a071b6118d3249e9516b962f95cd8d2944da1f59ab41495a2bf1b",
+    "signature": "OWM8aV25Rj0CzXPZ+JYd9cvQTzQRee6s3/1ZZA3FvvIWRIB9uG63UyRTrYSK2JwQJjd8AUIuumnYgL345q+yCA=="
   }
 ]
