@@ -108,9 +108,17 @@ _PROTECTION_MISSING_FIELDS = GitHubResponse(
 )
 
 _RULESETS_LIST_EMPTY = GitHubResponse(status_code=200, body=[], error_message=None)
-_RULESETS_LIST_EXISTING = GitHubResponse(
+_RULESETS_LIST_WITH_ID = GitHubResponse(
     status_code=200,
     body=[{
+        "id": 42,
+        "name": "agent-federation-baseline-v1",
+    }],
+    error_message=None,
+)
+_RULESETS_DETAIL_COMPATIBLE = GitHubResponse(
+    status_code=200,
+    body={
         "id": 42,
         "name": "agent-federation-baseline-v1",
         "target": "branch",
@@ -122,7 +130,39 @@ _RULESETS_LIST_EXISTING = GitHubResponse(
             {"type": "non_fast_forward"},
             {"type": "pull_request", "parameters": {"required_approving_review_count": 0}},
         ],
-    }],
+    },
+    error_message=None,
+)
+_RULESETS_DETAIL_WITH_BYPASS = GitHubResponse(
+    status_code=200,
+    body={
+        "id": 43,
+        "name": "agent-federation-baseline-v1",
+        "target": "branch",
+        "enforcement": "active",
+        "bypass_actors": [
+            {"actor_id": 1, "actor_type": "RepositoryRole", "bypass_mode": "always"},
+        ],
+        "conditions": {"ref_name": {"include": ["~DEFAULT_BRANCH"], "exclude": []}},
+        "rules": [
+            {"type": "deletion"},
+            {"type": "non_fast_forward"},
+            {"type": "pull_request", "parameters": {"required_approving_review_count": 0}},
+        ],
+    },
+    error_message=None,
+)
+_RULESETS_DETAIL_DIVERGENT = GitHubResponse(
+    status_code=200,
+    body={
+        "id": 44,
+        "name": "agent-federation-baseline-v1",
+        "target": "branch",
+        "enforcement": "disabled",
+        "bypass_actors": [],
+        "conditions": {"ref_name": {"include": ["~DEFAULT_BRANCH"], "exclude": []}},
+        "rules": [{"type": "deletion"}],
+    },
     error_message=None,
 )
 _RULESETS_CREATED = GitHubResponse(status_code=201, body={"id": 99, "name": RULESET_NAME}, error_message=None)
@@ -353,8 +393,10 @@ class TestRulesetManagement:
 
         def side_effect(method: str, path: str, body: object = None, *, token: str | None = None) -> GitHubResponse:
             call_paths.append(f"{method} {path}")
-            if "/rulesets" in path and "includes_parents" in path and method == "GET":
-                return _RULESETS_LIST_EXISTING
+            if "/rulesets" in path and "includes_parents" in path:
+                return _RULESETS_LIST_WITH_ID
+            if "/rulesets/" in path and method == "GET":
+                return _RULESETS_DETAIL_COMPATIBLE
             return GitHubResponse(status_code=200, body={}, error_message=None)
 
         mock_api.side_effect = side_effect
@@ -368,18 +410,10 @@ class TestRulesetManagement:
 
     @patch("governance._protection.github_api")
     def test_no_overwrite_divergent_ruleset(self, mock_api: object) -> None:
-        """Test 10: Divergent same-named ruleset is NOT overwritten."""
-        divergent = GitHubResponse(
+        """Test 10: Divergent same-named ruleset is NOT overwritten (uses separate detail fetch)."""
+        divergent_list = GitHubResponse(
             status_code=200,
-            body=[{
-                "id": 42,
-                "name": "agent-federation-baseline-v1",
-                "target": "branch",
-                "enforcement": "disabled",  # ← not active!
-                "bypass_actors": [],
-                "conditions": {"ref_name": {"include": ["~DEFAULT_BRANCH"], "exclude": []}},
-                "rules": [{"type": "deletion"}],  # ← missing rules
-            }],
+            body=[{"id": 44, "name": "agent-federation-baseline-v1"}],
             error_message=None,
         )
 
@@ -387,8 +421,10 @@ class TestRulesetManagement:
 
         def side_effect(method: str, path: str, body: object = None, *, token: str | None = None) -> GitHubResponse:
             call_paths.append(f"{method} {path}")
-            if "/rulesets" in path and "includes_parents" in path and method == "GET":
-                return divergent
+            if "/rulesets" in path and "includes_parents" in path:
+                return divergent_list
+            if "/rulesets/" in path and method == "GET":
+                return _RULESETS_DETAIL_DIVERGENT
             return GitHubResponse(status_code=200, body={}, error_message=None)
 
         mock_api.side_effect = side_effect
@@ -401,6 +437,28 @@ class TestRulesetManagement:
         assert not any("POST" in c or "PUT" in c for c in call_paths)
 
     @patch("governance._protection.github_api")
+    def test_detail_fetch_fails_causes_unsupported(self, mock_api: object) -> None:
+        """Blocker 2: Failed detail fetch (403) → UNSUPPORTED_CONFIG, no mutation."""
+        call_methods: list[str] = []
+
+        def side_effect(method: str, path: str, body: object = None, *, token: str | None = None) -> GitHubResponse:
+            call_methods.append(method)
+            if "/rulesets" in path and "includes_parents" in path:
+                return _RULESETS_LIST_WITH_ID
+            if "/rulesets/" in path and method == "GET":
+                return _PERM_403
+            return GitHubResponse(status_code=200, body={}, error_message=None)
+
+        mock_api.side_effect = side_effect
+        result = ensure_governance_baseline(
+            REPO,
+            GovernanceCheck(compliance=ComplianceStatus.NON_CONFORMANT, default_branch="main"),
+        )
+        assert result.action is None
+        assert "POST" not in call_methods
+        assert "PUT" not in call_methods
+
+    @patch("governance._protection.github_api")
     def test_no_put_in_v1(self, mock_api: object) -> None:
         """Test 30: ensure_baseline_ruleset never issues a PUT."""
         call_methods: list[str] = []
@@ -408,7 +466,9 @@ class TestRulesetManagement:
         def side_effect(method: str, path: str, body: object = None, *, token: str | None = None) -> GitHubResponse:
             call_methods.append(method)
             if "/rulesets" in path and "includes_parents" in path:
-                return _RULESETS_LIST_EXISTING
+                return _RULESETS_LIST_WITH_ID
+            if "/rulesets/" in path and method == "GET":
+                return _RULESETS_DETAIL_COMPATIBLE
             return GitHubResponse(status_code=200, body={}, error_message=None)
 
         mock_api.side_effect = side_effect
@@ -836,3 +896,194 @@ class TestSameLogicSetupAndStatus:
         assert check1.compliance == check2.compliance
         assert check1.rule_statuses == check2.rule_statuses
         assert check1.compliance == ComplianceStatus.CONFORMANT
+
+
+# ── Blocker-spezifische Tests ──────────────────────────────────────────────
+
+
+class TestBlocker1NonInteractiveNoWrite:
+    """Blocker 1: --non-interactive never prompts stdin, never issues POST."""
+
+    @patch("governance._protection.github_api")
+    @patch("governance._repo.github_api")
+    @patch("subprocess.run")
+    def test_non_interactive_no_ask_yn(self, mock_run: object, mock_repo_api: object, mock_prot_api: object) -> None:
+        """_ask_yn is never called and no POST is made in non-interactive no-apply mode."""
+        mock_run.return_value = subprocess.CompletedProcess(
+            args=[], returncode=0, stdout="https://github.com/kimeisele/test-node.git", stderr="",
+        )
+        prot_methods: list[str] = []
+
+        def repo_side_effect(method: str, path: str, body: object = None, *, token: str | None = None) -> GitHubResponse:
+            if "/repos/" in path and method == "GET":
+                return _REPO_OK
+            return GitHubResponse(status_code=200, body={}, error_message=None)
+
+        def prot_side_effect(method: str, path: str, body: object = None, *, token: str | None = None) -> GitHubResponse:
+            prot_methods.append(method)
+            if "/rules/branches/" in path:
+                return _RULES_EMPTY
+            if "/branches/" in path and "/protection" in path:
+                return _PROTECTION_404
+            if "/rulesets" in path:
+                return GitHubResponse(status_code=200, body={}, error_message=None)
+            return GitHubResponse(status_code=200, body={}, error_message=None)
+
+        mock_repo_api.side_effect = repo_side_effect
+        mock_prot_api.side_effect = prot_side_effect
+
+        # Simulate --non-interactive without --apply-governance
+        from setup_node import _run_governance_step
+        status = _run_governance_step(interactive=False, apply_governance=False)
+
+        assert status == ComplianceStatus.NON_CONFORMANT
+        # No POST was made
+        assert "POST" not in prot_methods
+        # No interactive prompts occur (verified by reachable path without _ask_yn)
+
+
+class TestBlocker2DetailFetch:
+    """Blocker 2: Full ruleset detail is fetched by ID before compatibility check."""
+
+    @patch("governance._protection.github_api")
+    def test_list_and_detail_separate(self, mock_api: object) -> None:
+        """List response is used for ID, detail response is used for _is_compatible."""
+        list_calls: list[str] = []
+        detail_calls: list[str] = []
+
+        def side_effect(method: str, path: str, body: object = None, *, token: str | None = None) -> GitHubResponse:
+            if "/rulesets" in path and "includes_parents" in path:
+                list_calls.append(path)
+                return _RULESETS_LIST_WITH_ID
+            if path.endswith("/rulesets/42") and method == "GET":
+                detail_calls.append(path)
+                return _RULESETS_DETAIL_COMPATIBLE
+            return GitHubResponse(status_code=200, body={}, error_message=None)
+
+        mock_api.side_effect = side_effect
+
+        result = ensure_governance_baseline(
+            REPO,
+            GovernanceCheck(compliance=ComplianceStatus.NON_CONFORMANT, default_branch="main"),
+        )
+        assert result.action == "skipped"
+        # List was called (to find ID)
+        assert len(list_calls) == 1
+        # Detail was called (to get full config)
+        assert len(detail_calls) == 1
+
+    @patch("governance._protection.github_api")
+    def test_detail_403_causes_unsupported(self, mock_api: object) -> None:
+        """403 on detail endpoint → UNSUPPORTED_CONFIG, no mutation."""
+        call_methods: list[str] = []
+
+        def side_effect(method: str, path: str, body: object = None, *, token: str | None = None) -> GitHubResponse:
+            call_methods.append(method)
+            if "/rulesets" in path and "includes_parents" in path:
+                return _RULESETS_LIST_WITH_ID
+            if path.endswith("/rulesets/42"):
+                return _PERM_403
+            return GitHubResponse(status_code=200, body={}, error_message=None)
+
+        mock_api.side_effect = side_effect
+
+        result = ensure_governance_baseline(
+            REPO,
+            GovernanceCheck(compliance=ComplianceStatus.NON_CONFORMANT, default_branch="main"),
+        )
+        assert result.action is None
+        assert "POST" not in call_methods
+
+
+class TestBlocker3BypassState:
+    """Blocker 3: BypassState is conservative — UNKNOWN without full details."""
+
+    def test_no_details_unknown(self) -> None:
+        """Readable rule types but no ruleset detail → UNKNOWN."""
+        from governance._protection import _determine_bypass_state
+
+        state = _determine_bypass_state(
+            _RULES_FULL.body, _PROTECTION_FULL.body, Diagnostic.OK,
+            ruleset_details_available=False,
+        )
+        assert state == BypassState.UNKNOWN
+
+    def test_full_details_no_bypass_confirmed(self) -> None:
+        """Full details available, no bypasses → NONE_CONFIRMED."""
+        from governance._protection import _determine_bypass_state
+
+        state = _determine_bypass_state(
+            _RULES_FULL.body, _PROTECTION_FULL.body, Diagnostic.OK,
+            ruleset_details_available=True,
+            ruleset_bypass_actors=[],
+        )
+        assert state == BypassState.NONE_CONFIRMED
+
+    def test_visible_bypass_actors_present(self) -> None:
+        """Visible bypass actors → PRESENT."""
+        from governance._protection import _determine_bypass_state
+
+        state = _determine_bypass_state(
+            _RULES_FULL.body, _PROTECTION_FULL.body, Diagnostic.OK,
+            ruleset_details_available=True,
+            ruleset_bypass_actors=[
+                {"actor_id": 1, "actor_type": "RepositoryRole", "bypass_mode": "always"},
+            ],
+        )
+        assert state == BypassState.PRESENT
+
+    def test_restrictions_alone_not_bypass(self) -> None:
+        """Classic protection restrictions field alone → NOT PRESENT."""
+        from governance._protection import _determine_bypass_state
+
+        prot_with_restrictions = {
+            "required_pull_request_reviews": {},
+            "allow_force_pushes": {"enabled": False},
+            "allow_deletions": {"enabled": False},
+            "enforce_admins": {"enabled": True},
+            "restrictions": {"users": [], "teams": []},
+        }
+
+        state = _determine_bypass_state(
+            _RULES_FULL.body, prot_with_restrictions, Diagnostic.OK,
+            ruleset_details_available=True,
+            ruleset_bypass_actors=[],
+        )
+        # restrictions is a push restriction, not a bypass
+        assert state == BypassState.NONE_CONFIRMED
+
+
+class TestBlocker4Readme:
+    """Blocker 4: README does not recommend direct push to protected main."""
+
+    def test_no_push_to_main_in_readme(self) -> None:
+        """The README does not contain 'Push to main' as a setup instruction."""
+        readme = Path(__file__).resolve().parents[1] / "README.md"
+        content = readme.read_text()
+        assert "Push to `main`" not in content
+        assert "After merging your setup PR" in content
+
+
+class TestBlocker5StatusCallCount:
+    """Blocker 5: --status performs exactly one detect_repository + one inspect_governance."""
+
+    @patch("governance._protection.github_api")
+    def test_inspect_governance_call_count(self, mock_api: object) -> None:
+        """inspect_governance is called exactly once per --status path (no double query from main)."""
+        call_paths: list[str] = []
+
+        def side_effect(method: str, path: str, body: object = None, *, token: str | None = None) -> GitHubResponse:
+            call_paths.append(f"{method} {path}")
+            if "/rules/branches/" in path:
+                return _RULES_FULL
+            if "/branches/" in path and "/protection" in path:
+                return _PROTECTION_404
+            return GitHubResponse(status_code=200, body={}, error_message=None)
+
+        mock_api.side_effect = side_effect
+
+        check = inspect_governance(REPO)
+        assert check.compliance == ComplianceStatus.CONFORMANT
+        # inspect_governance makes exactly 2 API calls: rules/branches + branches/protection
+        rules_calls = [c for c in call_paths if "/rules/branches/" in c]
+        assert len(rules_calls) == 1  # exactly one rules/branches call

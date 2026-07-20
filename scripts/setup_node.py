@@ -460,7 +460,7 @@ def interactive_setup() -> dict:
     }
 
 
-def apply_config(config: dict, *, apply_governance: bool = False) -> int:
+def apply_config(config: dict, *, interactive: bool, apply_governance: bool) -> int:
     tier = TIERS[config["tier"]]
     zone = CITY_ZONES.get(config.get("city_zone", ""), {})
 
@@ -533,7 +533,7 @@ def apply_config(config: dict, *, apply_governance: bool = False) -> int:
     topic_ok = _set_federation_topic(config["github_repo"])
 
     # ── Governance: branch protection baseline ──
-    governance_exit = _run_governance_step(config, apply_governance=apply_governance)
+    governance_exit = _run_governance_step(interactive=interactive, apply_governance=apply_governance)
 
     # Next steps
     print(f"\n{BOLD}── Next Steps ──{RESET}\n")
@@ -556,8 +556,18 @@ def apply_config(config: dict, *, apply_governance: bool = False) -> int:
     return governance_exit
 
 
-def _run_governance_step(config: dict, *, apply_governance: bool) -> ComplianceStatus:
+def _run_governance_step(*, interactive: bool, apply_governance: bool) -> ComplianceStatus:
     """Run the governance inspection and optionally apply the baseline.
+
+    *interactive* controls whether the user may be prompted (``_ask_yn``).
+    When ``False`` no stdin read occurs; the step is strictly non-blocking.
+
+    *apply_governance* controls whether a write (POST) may be issued.
+    When ``False`` the step is strictly read-only.
+
+    Remote writes are ONLY allowed when:
+      - ``apply_governance`` is ``True`` explicitly, OR
+      - ``interactive`` is ``True`` AND the user confirms via ``_ask_yn``.
 
     Returns the final ComplianceStatus for exit-code decisions.
     """
@@ -577,22 +587,23 @@ def _run_governance_step(config: dict, *, apply_governance: bool) -> ComplianceS
     if check.compliance == ComplianceStatus.CONFORMANT:
         return ComplianceStatus.CONFORMANT
 
-    if not apply_governance:
-        # Interactive: ask for confirmation if non-conformant
-        if check.compliance == ComplianceStatus.NON_CONFORMANT:
-            print("\n  The federation-baseline ruleset is not yet active on this repository.")
-            if _ask_yn("  Create the 'agent-federation-baseline-v1' ruleset now?", default=True):
-                apply_governance = True
-            else:
-                print(f"\n  {YELLOW}Skipped. Run with --apply-governance to set up later.{RESET}")
-                return check.compliance
-        else:
-            return check.compliance
+    # Determine whether we are allowed to write
+    may_write = apply_governance
 
-    if not apply_governance:
+    if not may_write and interactive and check.compliance == ComplianceStatus.NON_CONFORMANT:
+        # Interactive mode: ask user before writing
+        print("\n  The federation-baseline ruleset is not yet active on this repository.")
+        if _ask_yn("  Create the 'agent-federation-baseline-v1' ruleset now?", default=True):
+            may_write = True
+        else:
+            print(f"\n  {YELLOW}Skipped. Run with --apply-governance to set up later.{RESET}")
+
+    if not may_write:
+        if check.compliance == ComplianceStatus.NON_CONFORMANT and not interactive:
+            print(f"\n  {YELLOW}Run with --apply-governance to set up branch protection.{RESET}")
         return check.compliance
 
-    # Apply governance
+    # Apply governance (only reached if may_write is True)
     print("\n  Applying federation-baseline ruleset...")
     result = ensure_governance_baseline(repo, check)
     print(f"  Action: {GREEN}{result.action or 'none'}{RESET}")
@@ -650,12 +661,16 @@ def _print_governance_diag(diag: Diagnostic) -> None:
     print(f"  {YELLOW}{msg}{RESET}")
 
 
-def show_status() -> None:
-    """Show federation status from saved config."""
+def show_status() -> ComplianceStatus | None:
+    """Show federation status from saved config.
+
+    Returns the governance ComplianceStatus for exit-code decisions,
+    or ``None`` if no setup config exists.
+    """
     config_path = REPO_ROOT / ".federation-setup.json"
     if not config_path.exists():
         print(f"  {YELLOW}No setup config found. Run: python scripts/setup_node.py{RESET}")
-        return
+        return None
 
     config = json.loads(config_path.read_text())
 
@@ -685,7 +700,7 @@ def show_status() -> None:
     if repo is None:
         _print_governance_diag(diag)
         print()
-        return
+        return ComplianceStatus.UNKNOWN
 
     print(f"  Repository:     {repo.full_name}")
     print(f"  Default Branch: {repo.default_branch}")
@@ -693,6 +708,7 @@ def show_status() -> None:
     _print_governance_check(check)
 
     print()
+    return check.compliance
 
 
 def main() -> int:
@@ -710,17 +726,14 @@ def main() -> int:
 
     # ── --status: read-only inspection ──
     if args.status:
-        show_status()
-        # Exit code encodes governance compliance (spec §9.2)
-        repo, _diag = detect_repository(REPO_ROOT)
-        if repo is not None:
-            check = inspect_governance(repo)
-            if check.compliance == ComplianceStatus.CONFORMANT:
-                return 0
-            if check.compliance == ComplianceStatus.NON_CONFORMANT:
-                return 1
-            return 2
-        return 2  # UNKNOWN — repo not detectable
+        status = show_status()
+        if status is None:
+            return 2  # no config
+        if status == ComplianceStatus.CONFORMANT:
+            return 0
+        if status == ComplianceStatus.NON_CONFORMANT:
+            return 1
+        return 2  # UNKNOWN
 
     # ── --apply-governance alone: targeted governance run ──
     if args.apply_governance and not args.non_interactive and not any([
@@ -748,7 +761,7 @@ def main() -> int:
     else:
         config = interactive_setup()
 
-    governance_exit = apply_config(config, apply_governance=args.apply_governance)
+    governance_exit = apply_config(config, interactive=not args.non_interactive, apply_governance=args.apply_governance)
     if args.apply_governance:
         # With explicit --apply-governance, exit code reflects governance result
         return governance_exit

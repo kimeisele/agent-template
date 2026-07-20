@@ -167,7 +167,10 @@ def _evaluate(
     if unknown:
         details.append(f"Unknown rules: {', '.join(unknown)}")
 
-    bypass_state = _determine_bypass_state(rules_data, protection_data, source_diag)
+    bypass_state = _determine_bypass_state(
+        rules_data, protection_data, source_diag,
+        ruleset_details_available=False,
+    )
 
     return GovernanceCheck(
         compliance=compliance,
@@ -299,15 +302,28 @@ def _ensure_baseline_ruleset(repo: RepoInfo) -> tuple[str | None, Diagnostic]:
     if list_resp.status_code != 200 or not isinstance(list_resp.body, list):
         return None, Diagnostic.GITHUB_UNREACHABLE
 
-    # 2. Look for our ruleset by name
-    existing = None
+    # 2. Look for our ruleset by name — extract ID
+    candidate_id = None
     for rs in list_resp.body:
         if isinstance(rs, dict) and rs.get("name") == RULESET_NAME:
-            existing = rs
+            candidate_id = rs.get("id")
             break
 
-    # 3. Ruleset fehlt → POST create
-    if existing is None:
+    # 3. Fetch the full, authoritative ruleset detail by ID
+    existing_detail = None
+    if candidate_id is not None:
+        detail_resp = github_api(
+            "GET",
+            f"/repos/{repo.full_name}/rulesets/{candidate_id}",
+        )
+        if detail_resp.status_code == 200 and isinstance(detail_resp.body, dict):
+            existing_detail = detail_resp.body
+        else:
+            # Cannot verify the ruleset — do not mutate
+            return None, Diagnostic.UNSUPPORTED_CONFIG
+
+    # 4. Ruleset is absent → POST create
+    if existing_detail is None:
         payload = copy.deepcopy(RULESET_PAYLOAD_V1)
         create_resp = github_api(
             "POST",
@@ -320,8 +336,8 @@ def _ensure_baseline_ruleset(repo: RepoInfo) -> tuple[str | None, Diagnostic]:
             return None, _auth_diag(create_resp.status_code)
         return None, Diagnostic.API_ERROR
 
-    # 4. Ruleset exists — check compatibility
-    compatible, reason = _is_compatible(existing)
+    # 5. Ruleset exists — check compatibility against authoritative detail
+    compatible, reason = _is_compatible(existing_detail)
 
     if compatible:
         if reason == "stricter":
@@ -391,23 +407,50 @@ def _determine_bypass_state(
     rules_data: list[dict] | None,
     protection_data: dict | None,
     source_diag: Diagnostic,
+    *,
+    ruleset_details_available: bool = False,
+    ruleset_bypass_actors: list[dict] | None = None,
 ) -> BypassState:
-    """Determine bypass visibility from available data."""
+    """Determine bypass visibility from available data.
+
+    NONE_CONFIRMED — full ruleset details were read, no bypass actors
+        present in any source, and classic protection shows enforce_admins
+        enabled (no admin bypass).
+
+    PRESENT — bypass entries visible in ruleset details or classic
+        protection shows enforce_admins disabled.
+
+    UNKNOWN — insufficient data: ruleset details not available, auth
+        errors prevented reading one or more sources, or data is
+        ambiguous.
+
+    ``restrictions`` in classic protection is a push restriction, NOT
+    a bypass indicator — it does not cause PRESENT.
+    """
     if source_diag in (Diagnostic.AUTH_MISSING, Diagnostic.PERMISSION_INSUFFICIENT):
         return BypassState.UNKNOWN
 
+    any_bypass_found = False
+    all_details_available = ruleset_details_available
+
+    # Check ruleset details for bypass actors
+    if ruleset_bypass_actors is not None:
+        if len(ruleset_bypass_actors) > 0:
+            any_bypass_found = True
+    elif not ruleset_details_available:
+        all_details_available = False
+
     # Check classic protection for bypass indicators
     if protection_data is not None:
+        # enforce_admins disabled → admins can bypass → PRESENT
         ea = protection_data.get("enforce_admins")
         if isinstance(ea, dict) and not ea.get("enabled", True):
-            return BypassState.PRESENT
-        if protection_data.get("restrictions") is not None:
-            return BypassState.PRESENT
+            any_bypass_found = True
 
-    # Both sources readable → no bypasses detected
-    if rules_data is not None and protection_data is not None:
+    if any_bypass_found:
+        return BypassState.PRESENT
+    if all_details_available and rules_data is not None and protection_data is not None:
         return BypassState.NONE_CONFIRMED
-
     return BypassState.UNKNOWN
 
 

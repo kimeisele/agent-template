@@ -147,7 +147,7 @@ python scripts/setup_node.py --non-interactive --apply-governance --name "My Nod
   - `gh auth login` (GitHub CLI).
 - The token is never stored or logged.
 
-Push to `main` and the workflows will:
+After merging your setup PR, the workflows will:
 
 1. Regenerate `.well-known/agent-federation.json`
 2. Regenerate `.well-known/agent.json` (agent card)
