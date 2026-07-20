@@ -776,6 +776,7 @@ class TestCompatibilityCheck:
             "target": "branch",
             "enforcement": "disabled",
             "bypass_actors": [],
+            "conditions": {"ref_name": {"include": ["~DEFAULT_BRANCH"], "exclude": []}},
             "rules": [
                 {"type": "deletion"},
                 {"type": "non_fast_forward"},
@@ -793,6 +794,7 @@ class TestCompatibilityCheck:
             "target": "branch",
             "enforcement": "active",
             "bypass_actors": [],
+            "conditions": {"ref_name": {"include": ["~DEFAULT_BRANCH"], "exclude": []}},
             "rules": [
                 {"type": "deletion"},
                 {"type": "pull_request", "parameters": {"required_approving_review_count": 0}},
@@ -1313,3 +1315,130 @@ class TestBlocker8FinalCheckRequired:
         assert result.action is None
         assert result.final_check is None  # no action → no re-read
         assert Diagnostic.UNSUPPORTED_CONFIG in result.diagnostics
+
+
+# ── Blocker 9 Tests ────────────────────────────────────────────────────────
+
+
+class TestBlocker9CompatibilityCheck:
+    """Blocker 9: _is_compatible validates target, conditions, bypass, pull_request."""
+
+    _BASE_VALID = {
+        "name": "agent-federation-baseline-v1",
+        "target": "branch",
+        "enforcement": "active",
+        "bypass_actors": [],
+        "conditions": {"ref_name": {"include": ["~DEFAULT_BRANCH"], "exclude": []}},
+        "rules": [
+            {"type": "deletion"},
+            {"type": "non_fast_forward"},
+            {"type": "pull_request", "parameters": {"required_approving_review_count": 0}},
+        ],
+    }
+
+    def test_wrong_target_incompatible(self) -> None:
+        """target != 'branch' → incompatible."""
+        existing = {**self._BASE_VALID, "target": "tag"}
+        compatible, reason = _is_compatible(existing)
+        assert compatible is False
+        assert "target" in reason
+
+    def test_missing_conditions_incompatible(self) -> None:
+        """conditions field missing → incompatible."""
+        existing = {k: v for k, v in self._BASE_VALID.items() if k != "conditions"}
+        compatible, reason = _is_compatible(existing)
+        assert compatible is False
+        assert "conditions" in reason
+
+    def test_missing_default_branch_incompatible(self) -> None:
+        """~DEFAULT_BRANCH not in include → incompatible."""
+        existing = {
+            **self._BASE_VALID,
+            "conditions": {"ref_name": {"include": ["refs/heads/develop"], "exclude": []}},
+        }
+        compatible, reason = _is_compatible(existing)
+        assert compatible is False
+        assert "default_branch" in reason
+
+    def test_missing_bypass_actors_incompatible(self) -> None:
+        """bypass_actors field absent → incompatible."""
+        existing = {k: v for k, v in self._BASE_VALID.items() if k != "bypass_actors"}
+        compatible, reason = _is_compatible(existing)
+        assert compatible is False
+        assert "bypass_actors" in reason
+
+    def test_bypass_actors_wrong_type_incompatible(self) -> None:
+        """bypass_actors not a list → incompatible."""
+        existing = {**self._BASE_VALID, "bypass_actors": "not-a-list"}
+        compatible, reason = _is_compatible(existing)
+        assert compatible is False
+        assert "bypass_actors" in reason
+
+    def test_missing_pull_request_parameters_incompatible(self) -> None:
+        """pull_request rule without parameters → incompatible."""
+        existing = {
+            **self._BASE_VALID,
+            "rules": [
+                {"type": "deletion"},
+                {"type": "non_fast_forward"},
+                {"type": "pull_request"},  # no parameters
+            ],
+        }
+        compatible, reason = _is_compatible(existing)
+        assert compatible is False
+        assert "pull_request_parameters" in reason
+
+    def test_missing_review_count_incompatible(self) -> None:
+        """pull_request parameters without required_approving_review_count → incompatible."""
+        existing = {
+            **self._BASE_VALID,
+            "rules": [
+                {"type": "deletion"},
+                {"type": "non_fast_forward"},
+                {"type": "pull_request", "parameters": {}},  # empty, no review_count
+            ],
+        }
+        compatible, reason = _is_compatible(existing)
+        assert compatible is False
+        assert "review_count" in reason
+
+    def test_full_valid_exact_compatible_and_skipped(self) -> None:
+        """Full valid v1 structure → compatible (exact), action='skipped' with final_check.
+
+        This is an integration-level test through ensure_governance_baseline.
+        """
+        with patch("governance._protection.github_api") as mock_api:
+            def side_effect(method: str, path: str, body: object = None, *, token: str | None = None) -> GitHubResponse:
+                if "/rulesets" in path and "includes_parents" in path:
+                    return _RULESETS_LIST_WITH_ID
+                if "/rulesets/" in path and method == "GET":
+                    return _RULESETS_DETAIL_COMPATIBLE
+                if "/rules/branches/" in path:
+                    return _RULES_FULL
+                if "/branches/" in path and "/protection" in path:
+                    return _PROTECTION_404
+                return GitHubResponse(status_code=200, body={}, error_message=None)
+
+            mock_api.side_effect = side_effect
+            result = ensure_governance_baseline(
+                REPO,
+                GovernanceCheck(compliance=ComplianceStatus.NON_CONFORMANT, default_branch="main"),
+            )
+            assert result.action == "skipped"
+            assert result.final_check is not None
+            assert result.final_check.compliance == ComplianceStatus.CONFORMANT
+
+    def test_stricter_with_valid_target_compatible(self) -> None:
+        """Stricter ruleset with correct target/branch → compatible (stricter)."""
+        existing = {
+            **self._BASE_VALID,
+            "rules": [
+                {"type": "deletion"},
+                {"type": "non_fast_forward"},
+                {"type": "pull_request", "parameters": {"required_approving_review_count": 2}},
+                {"type": "required_linear_history"},
+            ],
+        }
+        compatible, reason = _is_compatible(existing)
+        assert compatible is True
+        assert reason == "stricter"

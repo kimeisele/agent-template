@@ -184,6 +184,9 @@ def _evaluate(
     if unknown:
         details.append(f"Unknown rules: {', '.join(unknown)}")
 
+    # BypassState.UNKNOWN is expected here: inspect_governance() does not
+    # fetch full ruleset details (only the ensure flow does).  This is a
+    # deliberate v1 limitation — NONE_CONFIRMED requires the detail fetch.
     bypass_state = _determine_bypass_state(
         rules_data, protection_data, source_diag,
         ruleset_details_available=False,
@@ -397,50 +400,91 @@ def _http_to_diag(status_code: int) -> Diagnostic:
 def _is_compatible(existing: dict) -> tuple[bool, str]:
     """Check whether an existing ruleset is compatible with the v1 baseline.
 
+    This is a **conservative** check: every field that would allow the
+    ruleset to deviate from the v1 target is validated explicitly.
+    Missing, malformed, or unexpected values → incompatible (do not touch).
+
     Returns:
-        ``(True, "exact")`` — baseline rules present, enforcement active.
-        ``(True, "stricter")`` — baseline plus stricter rules, acceptable.
+        ``(True, "exact")`` — baseline rules present, all fields valid.
+        ``(True, "stricter")`` — baseline plus stricter rules, all fields valid.
         ``(False, reason)`` — incompatible or unknown; do not touch.
     """
-    # Enforcement must be active
+    # ── 1. Target must be "branch" ──────────────────────────────────────
+    if existing.get("target") != "branch":
+        return False, "target_not_branch"
+
+    # ── 2. Enforcement must be active ───────────────────────────────────
     if existing.get("enforcement") != "active":
         return False, "enforcement_not_active"
 
-    # Check for unexpected bypass actors
-    bypass = existing.get("bypass_actors")
-    if isinstance(bypass, list) and len(bypass) > 0:
-        for ba in bypass:
-            if isinstance(ba, dict):
-                mode = ba.get("bypass_mode", "")
-                if mode and mode != "none":
-                    return False, "unexpected_bypass_actors"
+    # ── 3. Conditions must target ~DEFAULT_BRANCH ───────────────────────
+    conditions = existing.get("conditions")
+    if not isinstance(conditions, dict):
+        return False, "conditions_missing_or_invalid"
+    ref_name = conditions.get("ref_name")
+    if not isinstance(ref_name, dict):
+        return False, "conditions_ref_name_missing_or_invalid"
+    include = ref_name.get("include")
+    if not isinstance(include, list):
+        return False, "conditions_include_missing_or_invalid"
+    if "~DEFAULT_BRANCH" not in include:
+        return False, "default_branch_not_targeted"
 
-    # Check baseline rule types are present
-    existing_rules = existing.get("rules", [])
+    # ── 4. Bypass actors must be absent or empty ────────────────────────
+    bypass = existing.get("bypass_actors")
+    if bypass is None:
+        # Field is absent — cannot confirm safety
+        return False, "bypass_actors_missing"
+    if not isinstance(bypass, list):
+        return False, "bypass_actors_invalid_type"
+    for ba in bypass:
+        if not isinstance(ba, dict):
+            return False, "bypass_actors_invalid_type"
+        mode = ba.get("bypass_mode", "")
+        if mode and mode != "none":
+            return False, "unexpected_bypass_actors"
+
+    # ── 5. Rules must contain all baseline types ────────────────────────
+    existing_rules = existing.get("rules")
     if not isinstance(existing_rules, list):
-        return False, "unknown_rules_structure"
+        return False, "rules_missing_or_invalid"
 
     existing_types: set[str] = set()
-    pull_request_count = 0
+    pull_request_count: int | None = None
+    pr_rule_count = 0
+
     for rule in existing_rules:
-        if isinstance(rule, dict):
-            rt = rule.get("type")
-            if isinstance(rt, str):
-                existing_types.add(rt)
-                if rt == "pull_request":
-                    params = rule.get("parameters", {})
-                    if isinstance(params, dict):
-                        pull_request_count = params.get("required_approving_review_count", 0)
+        if not isinstance(rule, dict):
+            return False, "rule_entry_invalid_type"
+        rt = rule.get("type")
+        if not isinstance(rt, str):
+            return False, "rule_type_invalid"
+        existing_types.add(rt)
+
+        if rt == "pull_request":
+            pr_rule_count += 1
+            params = rule.get("parameters")
+            if not isinstance(params, dict):
+                return False, "pull_request_parameters_missing_or_invalid"
+            count = params.get("required_approving_review_count")
+            if not isinstance(count, int) or count < 0:
+                return False, "pull_request_review_count_invalid"
+            pull_request_count = count
+
+    # Exactly one pull_request rule is required
+    if pr_rule_count != 1:
+        return False, f"pull_request_rule_count_{pr_rule_count}"
 
     # Baseline rules must all be present
     if not BASELINE_RULE_TYPES.issubset(existing_types):
         missing = BASELINE_RULE_TYPES - existing_types
         return False, f"missing_baseline_rules:{','.join(sorted(missing))}"
 
-    # Check for stricter rules beyond baseline
+    # ── 6. Determine compatibility level ────────────────────────────────
+    assert pull_request_count is not None  # guarded by pr_rule_count == 1
     if existing_types - set(BASELINE_RULE_TYPES):
         return True, "stricter"
-    if isinstance(pull_request_count, int) and pull_request_count > 0:
+    if pull_request_count > 0:
         return True, "stricter"
 
     return True, "exact"
