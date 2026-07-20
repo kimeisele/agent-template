@@ -1530,3 +1530,50 @@ class TestGate5DocumentationGuards:
         ), (
             "README must only reference canonical nadi_outbox.json path"
         )
+
+
+class TestDisplayNamePropagation:
+    """Gate 6: configured display_name flows through to descriptors."""
+
+    @staticmethod
+    def _cp(repo_dir: Path, *names: str):
+        d = repo_dir / "scripts"
+        d.mkdir(parents=True, exist_ok=True)
+        for n in names:
+            s = _SCRIPTS / n
+            if s.exists():
+                (d / n).write_text(s.read_text())
+
+    def test_configured_display_name_in_descriptor(self, tmp_path: Path) -> None:
+        self._cp(tmp_path, "render_federation_descriptor.py", "federation_utils.py")
+        (tmp_path / "docs" / "authority").mkdir(parents=True)
+        (tmp_path / "docs" / "authority" / "capabilities.json").write_text(
+            json.dumps({"skills": []}))
+        (tmp_path / ".federation-setup.json").write_text(json.dumps({
+            "display_name": "My Custom Node Name",
+            "github_repo": "org/some-slug",
+        }))
+        out = tmp_path / "descriptor.json"
+        subprocess.run(
+            [sys.executable, str(tmp_path / "scripts" / "render_federation_descriptor.py"),
+             "--output", str(out), "--repo", "org/some-slug"],
+            capture_output=True, text=True, cwd=str(tmp_path),
+        )
+        d = json.loads(out.read_text())
+        assert d["display_name"] == "My Custom Node Name", (
+            f"expected configured name, got {d['display_name']}")
+
+    def test_slug_fallback_when_no_config(self, tmp_path: Path) -> None:
+        self._cp(tmp_path, "render_federation_descriptor.py", "federation_utils.py")
+        (tmp_path / "docs" / "authority").mkdir(parents=True)
+        (tmp_path / "docs" / "authority" / "capabilities.json").write_text(
+            json.dumps({"skills": []}))
+        out = tmp_path / "descriptor.json"
+        subprocess.run(
+            [sys.executable, str(tmp_path / "scripts" / "render_federation_descriptor.py"),
+             "--output", str(out), "--repo", "org/some-slug"],
+            capture_output=True, text=True, cwd=str(tmp_path),
+        )
+        d = json.loads(out.read_text())
+        assert d["display_name"] == "Some Slug", (
+            f"expected slug-derived name, got {d['display_name']}")
