@@ -36,7 +36,8 @@ def test_render_agent_card(tmp_path: Path) -> None:
     result = _run_script("render_agent_card.py", "--output", str(out))
     assert result.returncode == 0, result.stderr
     data = json.loads(out.read_text())
-    assert data["name"] == "Agent Template"
+    # Name must be a non-empty string — no hardcoded template identity.
+    assert isinstance(data["name"], str) and len(data["name"]) > 0
     assert "skills" in data
     assert "federation" in data
 

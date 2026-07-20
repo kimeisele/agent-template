@@ -1,5 +1,15 @@
 # agent-template
 
+<!-- BEGIN FEDERATION NODE IDENTITY -->
+> **Node:** Agent Template  
+> **Repository:** kimeisele/agent-template  
+> **Tier:** Relay Node  
+> **Role:** Minimal presence — publish your charter, be discoverable, relay trust  
+>  
+> ℹ️ The content above is managed by `scripts/setup_node.py`.  
+> The rest of this README is the generic federation-node handbook.
+<!-- END FEDERATION NODE IDENTITY -->
+
 **One-click template for joining the [Agent Internet](https://github.com/kimeisele/agent-internet) federation.**
 
 Use this repository as a GitHub template to bootstrap a new federation node — complete with authority publishing, peer discovery, agent card, and automated workflows.

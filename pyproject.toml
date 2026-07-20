@@ -1,7 +1,7 @@
 [project]
-name = "agent-template"
+name = "federation-node-kernel"
 version = "0.1.0"
-description = "Federation node template for the agent-internet"
+description = "Shared Python kernel for agent-federation nodes"
 requires-python = ">=3.11"
 license = "MIT"
 
@@ -9,5 +9,5 @@ license = "MIT"
 requires = ["setuptools>=68.0"]
 build-backend = "setuptools.build_meta"
 
-[tool.setuptools.packages.find]
-include = ["agent_template*"]
+[tool.setuptools]
+py-modules = ["head_agent"]

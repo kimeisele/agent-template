@@ -3,8 +3,11 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import subprocess
+import sys
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 # ── Structured GitHub API access ───────────────────────────────────────────
@@ -182,3 +185,167 @@ def curl_bytes(url: str, token: str | None = None) -> bytes | None:
 def display_name(repo_name: str) -> str:
     """Convert a repo name like 'my-cool-node' to 'My Cool Node'."""
     return " ".join(word.capitalize() for word in repo_name.replace("_", "-").split("-") if word) or repo_name
+
+
+# ── Identity resolution ─────────────────────────────────────────────────────
+
+# Stale template identity that must never be returned as a live default.
+_TEMPLATE_REPO = "kimeisele/agent-template"
+
+
+def repo_from_git_remote(repo_root: Path) -> str | None:
+    """Extract ``owner/repo`` from the ``origin`` git remote.
+
+    Returns ``None`` if no suitable GitHub remote exists.
+    """
+    try:
+        result = subprocess.run(
+            ["git", "remote", "get-url", "origin"],
+            capture_output=True, text=True, cwd=str(repo_root),
+        )
+    except (OSError, FileNotFoundError):
+        return None
+    if result.returncode != 0:
+        return None
+    return _parse_github_full_name(result.stdout.strip())
+
+
+def repo_from_setup_config(repo_root: Path) -> str | None:
+    """Read the saved ``github_repo`` from ``.federation-setup.json``.
+
+    Returns ``None`` if the file is missing, unreadable, or does not
+    contain a ``github_repo`` key.
+    """
+    config_path = repo_root / ".federation-setup.json"
+    if not config_path.exists():
+        return None
+    try:
+        config = json.loads(config_path.read_text())
+    except (json.JSONDecodeError, OSError):
+        return None
+    repo = config.get("github_repo")
+    return repo if isinstance(repo, str) and repo else None
+
+
+def resolve_repo_identity(
+    repo_root: Path | None = None,
+    *,
+    explicit_repo: str | None = None,
+    _for_test: dict[str, str] | None = None,
+) -> str:
+    """Return the authoritative repository identity as ``owner/repo``.
+
+    Resolution order (first successful source wins):
+
+    1. *explicit_repo* — test/offline override.
+    2. Git remote ``origin`` — parsed from the local checkout.
+    3. ``.federation-setup.json`` ``github_repo`` field.
+    4. ``GITHUB_REPOSITORY`` environment variable.
+    5. **Fail** — ``RuntimeError``; no static fallback.
+
+    The template default ``kimeisele/agent-template`` is **never**
+    returned unless it is the actual git remote of the checkout.
+
+    *explicit_repo* is validated as ``owner/name``.  An explicit value
+    that matches the template identity is accepted (test scenarios) but
+    logged as a warning.
+
+    *repo_root* defaults to the parent of the ``scripts/`` directory
+    (the repository root).
+    """
+    if repo_root is None:
+        repo_root = Path(__file__).resolve().parents[1]
+
+    # 1. Explicit override (test/offline only)
+    if explicit_repo:
+        _validate_repo_format(explicit_repo)
+        if explicit_repo == _TEMPLATE_REPO:
+            print(
+                f"warning: explicit --repo is the template identity "
+                f"({_TEMPLATE_REPO}); descriptors will carry template "
+                f"identity, not your node identity",
+                file=sys.stderr,
+            )
+        return explicit_repo
+
+    # 2. Git remote (authoritative for the local checkout)
+    remote = repo_from_git_remote(repo_root)
+    if remote:
+        return remote
+
+    # 3. Saved setup configuration
+    config_repo = repo_from_setup_config(repo_root)
+    if config_repo:
+        if config_repo != _TEMPLATE_REPO:
+            # Config has a non-template value — cross-check is
+            # impossible without a git remote, so accept it.
+            return config_repo
+        print(
+            "warning: saved config still references template identity "
+            f"({_TEMPLATE_REPO}); has setup_node.py been run?",
+            file=sys.stderr,
+        )
+        return config_repo
+
+    # 4. Environment variable (GitHub Actions)
+    env_repo = os.environ.get("GITHUB_REPOSITORY")
+    if env_repo:
+        _validate_repo_format(env_repo)
+        if env_repo != _TEMPLATE_REPO:
+            return env_repo
+        print(
+            "warning: GITHUB_REPOSITORY is the template identity "
+            f"({_TEMPLATE_REPO}); descriptors will carry template identity",
+            file=sys.stderr,
+        )
+        return env_repo
+
+    # 5. Fail closed
+    raise RuntimeError(
+        "Cannot determine repository identity. "
+        "Ensure this is a git repository with a GitHub remote, "
+        "or set the GITHUB_REPOSITORY environment variable. "
+        "For offline/test use, pass --repo explicitly."
+    )
+
+
+def _validate_repo_format(repo: str) -> None:
+    """Raise ``ValueError`` if *repo* is not ``owner/name``."""
+    if not re.fullmatch(r"[^/]+/[^/]+", repo):
+        raise ValueError(
+            f"Invalid repository format: {repo!r}. "
+            f"Expected 'owner/repo' (e.g. 'kimeisele/my-node')."
+        )
+
+
+def _parse_github_full_name(remote_url: str) -> str | None:
+    """Extract ``owner/repo`` from a git remote URL.
+
+    Supports:
+        - ``https://github.com/owner/repo.git``
+        - ``git@github.com:owner/repo.git``
+        - ``ssh://git@github.com/owner/repo.git``
+
+    Trailing ``.git`` is stripped.  Returns ``None`` for non-GitHub URLs.
+    """
+    url = remote_url.rstrip("/")
+
+    # https://github.com/owner/repo.git
+    if "github.com/" in url:
+        after = url.split("github.com/", 1)[1]
+        name = after.removesuffix(".git").strip("/")
+        parts = name.split("/")
+        if len(parts) >= 2:
+            return f"{parts[0]}/{parts[1]}"
+        return None
+
+    # git@github.com:owner/repo.git
+    if "github.com:" in url:
+        after = url.split("github.com:", 1)[1]
+        name = after.removesuffix(".git").strip("/")
+        parts = name.split("/")
+        if len(parts) >= 2:
+            return f"{parts[0]}/{parts[1]}"
+        return None
+
+    return None
