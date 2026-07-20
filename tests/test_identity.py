@@ -1472,3 +1472,61 @@ class TestSetupOutcomeExitCodes:
         )
         assert outcome.exit_code == 0
         assert outcome.federation_registration_complete
+
+
+class TestGate5DocumentationGuards:
+    """Gate 5: Documentation must not contain outdated/incorrect claims."""
+
+    def test_no_push_to_main_in_human_output(self) -> None:
+        """quickstart must not tell users to push directly to main."""
+        quickstart = _SCRIPTS / "quickstart.py"
+        content = quickstart.read_text()
+        assert "push to main" not in content, (
+            "quickstart must not say 'push to main'"
+        )
+        assert "Create a setup branch" in content or "PR" in content or \
+               "pull request" in content.lower(), (
+            "quickstart must mention PR-based workflow"
+        )
+
+    def test_no_agent_template_bot_in_workflows(self) -> None:
+        """Workflows must not use agent-template-bot identity."""
+        import glob
+        for wf_path in sorted(glob.glob(
+            str(_SCRIPTS.parent / ".github" / "workflows" / "*.yml")
+        )):
+            content = Path(wf_path).read_text()
+            assert "agent-template-bot" not in content, (
+                f"{wf_path} must not use agent-template-bot"
+            )
+            assert "bot@agent-template" not in content, (
+                f"{wf_path} must not use bot@agent-template"
+            )
+
+    def test_no_static_test_counts_in_agents_md(self) -> None:
+        """AGENTS.md must not claim a specific number of tests."""
+        agents = _SCRIPTS.parent / "AGENTS.md"
+        content = agents.read_text()
+        for pattern in ("8 smoke", "101 tests", "175 tests", "195 tests"):
+            assert pattern not in content, (
+                f"AGENTS.md must not contain static count '{pattern}'"
+            )
+
+    def test_no_destructive_curl_topic_in_docs(self) -> None:
+        """Documentation must not reference the destructive curl topic PUT."""
+        readme = _SCRIPTS.parent / "README.md"
+        content = readme.read_text()
+        assert '{"names":["agent-federation-node"]}' not in content, (
+            "README must not document destructive curl topic command"
+        )
+
+    def test_no_root_nadi_outbox_in_docs(self) -> None:
+        """Documentation must not reference root-level nadi_outbox.json."""
+        readme = _SCRIPTS.parent / "README.md"
+        content = readme.read_text()
+        # Canonical path is data/federation/...
+        assert "nadi_outbox.json" not in content.replace(
+            "data/federation/nadi_outbox.json", ""
+        ), (
+            "README must only reference canonical nadi_outbox.json path"
+        )

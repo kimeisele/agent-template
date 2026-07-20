@@ -10,9 +10,9 @@
 > The rest of this README is the generic federation-node handbook.
 <!-- END FEDERATION NODE IDENTITY -->
 
-**One-click template for joining the [Agent Internet](https://github.com/kimeisele/agent-internet) federation.**
+**GitHub template for joining the [Agent Internet](https://github.com/kimeisele/agent-internet) federation.**
 
-Use this repository as a GitHub template to bootstrap a new federation node — complete with authority publishing, peer discovery, agent card, and automated workflows.
+Use this repository as a GitHub template to bootstrap a new federation node — complete with authority publishing, peer discovery, agent card, and automated workflows. Setup takes a few minutes and requires a GitHub account.
 
 ## The Federation
 
@@ -63,7 +63,10 @@ YOUR NODE (this template)  your authority, your capabilities, your agents
 git clone https://github.com/YOUR_ORG/YOUR_NODE
 cd YOUR_NODE
 
-# 3. Run the interactive setup wizard
+# 3. Install dependencies
+pip install -e ".[dev]"
+
+# 4. Run the interactive setup wizard
 python scripts/setup_node.py
 ```
 
@@ -154,10 +157,11 @@ python scripts/setup_node.py --non-interactive --apply-governance --name "My Nod
 ### Permissions
 
 - **Read checks:** Work without authentication (may hit rate limits).
-- **Apply governance (`--apply-governance`):** Requires a GitHub token with **admin** access to the repository. Provide it via:
-  - `GITHUB_TOKEN` or `GH_TOKEN` environment variable, or
-  - `gh auth login` (GitHub CLI).
-- The token is never stored or logged.
+- **Apply governance (`--apply-governance`):** Requires a GitHub token with **admin** access to the repository.
+- **Federation relay (optional):** Requires two repository secrets:
+  - `FEDERATION_PAT` — a GitHub personal access token with `repo` scope for cross-repo relay to `kimeisele/steward-federation`.
+  - `NODE_PRIVATE_KEY` — an Ed25519 private key for NADI message signing (generated automatically on first `NadiNode` load).
+- Without these secrets, core validation and local NADI diagnostics still work. The heartbeat workflow will skip remote relay and display a notice.
 
 After merging your setup PR, the workflows will:
 
@@ -202,7 +206,7 @@ The **Federation Discovery** workflow runs weekly and commits results to `.feder
 
 ## Nadi transport
 
-Your node ships with `data/federation/nadi_outbox.json` — a plain JSON array where you queue messages for other federation nodes. The [agent-internet](https://github.com/kimeisele/agent-internet) relay pump periodically checks out sibling repos, reads their outboxes, and delivers envelopes to the target node's inbox.
+Your node ships with `data/federation/nadi_outbox.json` — a plain JSON array where you send signed `NadiMessage` entries via `scripts/nadi_send.py`. The [agent-internet](https://github.com/kimeisele/agent-internet) relay pump periodically checks out sibling repos, reads their outboxes, and delivers messages to the target node's inbox.
 
 ```bash
 # Send a heartbeat to agent-internet
@@ -219,7 +223,7 @@ python scripts/nadi_send.py --list
 python scripts/nadi_send.py --clear
 ```
 
-Each message is a `DeliveryEnvelope` with `source_city_id`, `target_city_id`, `operation`, `payload`, envelope IDs, priority, and TTL. The relay hub ([steward-federation](https://github.com/kimeisele/steward-federation)) coordinates the actual transport via `FilesystemFederationTransport`.
+Each message is a signed `NadiMessage` with `source`, `target`, `operation`, `payload`, priority, TTL, payload hash, and cryptographic signature. The relay hub ([steward-federation](https://github.com/kimeisele/steward-federation)) coordinates transport via `NadiHubRelay`.
 
 ## Capability manifest
 
