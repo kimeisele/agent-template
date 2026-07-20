@@ -80,15 +80,35 @@ jobs:
         run: |
           pip install "nadi-kit @ git+https://github.com/kimeisele/steward-federation.git@c613577b7353d3cb1fd31be542aed8766f195079"
 
-      - name: Run NADI heartbeat and relay
-        id: nadi-relay
+      - name: Initial NADI sync
         if: steps.federation-config.outputs.remote-enabled == 'true'
         env:
           NODE_PRIVATE_KEY: ${{ secrets.NODE_PRIVATE_KEY }}
           GH_TOKEN: ${{ secrets.FEDERATION_PAT }}
         run: |
           python3 -m nadi_kit --peer-json data/federation/peer.json sync
+
+      - name: Emit signed heartbeat
+        if: steps.federation-config.outputs.remote-enabled == 'true'
+        env:
+          NODE_PRIVATE_KEY: ${{ secrets.NODE_PRIVATE_KEY }}
+          GH_TOKEN: ${{ secrets.FEDERATION_PAT }}
+        run: |
           python3 -m nadi_kit --peer-json data/federation/peer.json heartbeat --health 1.0
+
+      - name: Capture heartbeat proof
+        if: steps.federation-config.outputs.remote-enabled == 'true'
+        run: |
+          python scripts/heartbeat_postcondition.py capture \
+            --outbox data/federation/nadi_outbox.json \
+            --output heartbeat-proof.json
+
+      - name: Final NADI sync
+        if: steps.federation-config.outputs.remote-enabled == 'true'
+        env:
+          NODE_PRIVATE_KEY: ${{ secrets.NODE_PRIVATE_KEY }}
+          GH_TOKEN: ${{ secrets.FEDERATION_PAT }}
+        run: |
           python3 -m nadi_kit --peer-json data/federation/peer.json sync
 
       - name: Verify hub postcondition
@@ -96,4 +116,5 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.FEDERATION_PAT }}
         run: |
-          python scripts/heartbeat_postcondition.py
+          python scripts/heartbeat_postcondition.py verify \
+            --proof heartbeat-proof.json

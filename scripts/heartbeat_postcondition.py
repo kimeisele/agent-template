@@ -9,15 +9,8 @@ Usage:
     python scripts/heartbeat_postcondition.py verify \
       --proof heartbeat-proof.json
 
-``capture`` reads the current outbox and saves the cryptographic source
-node ID plus all message IDs to a proof file.
-
-``verify`` checks that every captured message ID appears in the hub
-nadi mailbox files for the captured source.  Message contents are read
-via ``gh api`` and validated.
-
 Exit codes:
-    0 — all captured message IDs confirmed in hub
+    0 — all captured heartbeat IDs confirmed in hub
     1 — postcondition not met
     2 — usage or I/O error
 """
@@ -31,14 +24,12 @@ import sys
 import time
 from pathlib import Path
 
-REPO_ROOT = Path(__file__).resolve().parents[1]
-
 
 # ── capture ─────────────────────────────────────────────────────────────────
 
 
 def cmd_capture(outbox_path: str, output_path: str) -> int:
-    """Read outbox and save proof of pending message IDs."""
+    """Read outbox and save proof of heartbeat/claim message IDs."""
     opath = Path(outbox_path)
     if not opath.exists():
         print(f"error: outbox not found: {opath}", file=sys.stderr)
@@ -51,31 +42,55 @@ def cmd_capture(outbox_path: str, output_path: str) -> int:
         return 2
 
     if not isinstance(raw, list) or not raw:
-        print("error: outbox is empty or not a list", file=sys.stderr)
+        print("error: outbox is empty", file=sys.stderr)
         return 1
 
-    # Cryptographic source from first message
-    source = raw[0].get("source", "")
-    if not source:
-        print("error: first message has no 'source' field", file=sys.stderr)
+    # Validate: all messages must share the same crypto source
+    sources = {m.get("source") for m in raw if isinstance(m, dict) and m.get("source")}
+    if len(sources) != 1:
+        print(
+            f"error: outbox contains messages from {len(sources)} different sources. "
+            f"All messages in one capture must share the same source.",
+            file=sys.stderr,
+        )
         return 2
+    source = sources.pop()
 
-    message_ids = [m.get("id") for m in raw if m.get("id")]
-    if not message_ids:
-        print("error: no message IDs found in outbox", file=sys.stderr)
+    # Filter: require at least one heartbeat
+    heartbeat_msgs = [
+        m for m in raw
+        if isinstance(m, dict)
+        and m.get("operation") == "heartbeat"
+        and m.get("id")
+    ]
+    if not heartbeat_msgs:
+        print("error: no heartbeat message found in outbox", file=sys.stderr)
         return 1
+
+    # Additional messages from the same emit cycle (e.g. federation.agent_claim)
+    heartbeat_ids = [m["id"] for m in heartbeat_msgs]
+    other_ids = [
+        m["id"] for m in raw
+        if isinstance(m, dict)
+        and m.get("id")
+        and m.get("operation") != "heartbeat"
+        and m.get("source") == source
+    ]
 
     proof = {
         "source_node_id": source,
-        "message_ids": message_ids,
-        "operations": [m.get("operation") for m in raw],
+        "heartbeat_message_ids": heartbeat_ids,
+        "additional_message_ids": other_ids,
         "captured_at": time.time(),
     }
 
     Path(output_path).write_text(json.dumps(proof, indent=2) + "\n")
-    print(f"Captured {len(message_ids)} message ID(s) from source {source}")
-    for mid in message_ids:
-        print(f"  {mid[:16]}…")
+    print(f"Captured {len(heartbeat_ids)} heartbeat + {len(other_ids)} additional "
+          f"message(s) from source {source}")
+    for mid in heartbeat_ids:
+        print(f"  heartbeat: {mid[:16]}…")
+    for mid in other_ids:
+        print(f"  additional: {mid[:16]}…")
     return 0
 
 
@@ -83,12 +98,10 @@ def cmd_capture(outbox_path: str, output_path: str) -> int:
 
 
 def _list_hub_nadi_files() -> list[dict] | None:
-    """List files in hub nadi/ directory via gh api. Returns None on failure."""
     token = (os.environ.get("GH_TOKEN") or "").strip()
     if not token:
         print("error: GH_TOKEN not set", file=sys.stderr)
         return None
-
     result = subprocess.run(
         ["gh", "api", "repos/kimeisele/steward-federation/contents/nadi"],
         capture_output=True, text=True, timeout=15,
@@ -98,20 +111,15 @@ def _list_hub_nadi_files() -> list[dict] | None:
         print(f"error: cannot list hub files: {result.stderr.strip()[:120]}",
               file=sys.stderr)
         return None
-
     try:
         entries = json.loads(result.stdout)
     except json.JSONDecodeError:
         print("error: hub API returned invalid JSON", file=sys.stderr)
         return None
-
-    if not isinstance(entries, list):
-        return None
-    return entries
+    return entries if isinstance(entries, list) else None
 
 
 def _fetch_hub_file(download_url: str) -> list | None:
-    """Fetch and decode a single hub nadi file. Returns parsed JSON or None."""
     result = subprocess.run(
         ["gh", "api", download_url],
         capture_output=True, text=True, timeout=15,
@@ -133,7 +141,6 @@ def _fetch_hub_file(download_url: str) -> list | None:
 
 
 def cmd_verify(proof_path: str) -> int:
-    """Verify captured message IDs exist in hub mailbox files."""
     ppath = Path(proof_path)
     if not ppath.exists():
         print(f"error: proof file not found: {ppath}", file=sys.stderr)
@@ -146,19 +153,25 @@ def cmd_verify(proof_path: str) -> int:
         return 2
 
     source = proof.get("source_node_id", "")
-    message_ids = proof.get("message_ids", [])
+    heartbeat_ids = proof.get("heartbeat_message_ids", [])
     captured_at = proof.get("captured_at", 0)
 
-    if not source or not message_ids:
-        print("error: proof missing source or message_ids", file=sys.stderr)
+    if not source or not heartbeat_ids:
+        print("error: proof missing source or heartbeat_message_ids",
+              file=sys.stderr)
         return 2
+
+    # Timestamp sanity
+    if captured_at > time.time() + 300:
+        print("error: captured_at is in the future", file=sys.stderr)
+        return 1
 
     # List hub files
     entries = _list_hub_nadi_files()
     if entries is None:
         return 1
 
-    # Find files matching source prefix
+    # Find files matching crypto source
     prefix = f"{source}_to_"
     matching = [e for e in entries
                 if isinstance(e, dict)
@@ -167,13 +180,13 @@ def cmd_verify(proof_path: str) -> int:
     if not matching:
         print(
             f"error: no hub files for source {source}. "
-            f"Files seen: {', '.join(e.get('name', '?') for e in entries[:10]) or '(none)'}",
+            f"Files: {', '.join(e.get('name','?') for e in entries[:10]) or '(none)'}",
             file=sys.stderr,
         )
         return 1
 
-    # Read matching files and search for captured message IDs
-    found_ids: set[str] = set()
+    # Read matching files, validate heartbeat IDs with correct source + operation
+    found_heartbeat_ids: set[str] = set()
     for entry in matching:
         download_url = entry.get("download_url") or entry.get("url", "")
         if not download_url:
@@ -181,29 +194,31 @@ def cmd_verify(proof_path: str) -> int:
         content = _fetch_hub_file(download_url)
         if isinstance(content, list):
             for msg in content:
-                if isinstance(msg, dict) and msg.get("id"):
-                    found_ids.add(msg["id"])
+                if not isinstance(msg, dict):
+                    continue
+                mid = msg.get("id")
+                msg_source = msg.get("source")
+                msg_op = msg.get("operation")
+                # Must match source, operation, and be one of our heartbeat IDs
+                if (mid and mid in heartbeat_ids
+                        and msg_source == source
+                        and msg_op == "heartbeat"):
+                    found_heartbeat_ids.add(mid)
 
-    missing = [mid for mid in message_ids if mid not in found_ids]
+    missing = [mid for mid in heartbeat_ids if mid not in found_heartbeat_ids]
     if missing:
         print(
-            f"error: {len(missing)}/{len(message_ids)} message ID(s) "
-            f"not found in hub files for source {source}",
+            f"error: {len(missing)}/{len(heartbeat_ids)} heartbeat ID(s) "
+            f"not confirmed in hub for source {source}",
             file=sys.stderr,
         )
         for mid in missing:
             print(f"  missing: {mid[:16]}…", file=sys.stderr)
         return 1
 
-    # Timestamp plausibility: captured_at must be before now
-    now = time.time()
-    if captured_at > now + 300:
-        print("error: captured_at is in the future", file=sys.stderr)
-        return 1
-
-    print(f"Hub postcondition verified: {len(message_ids)} message ID(s) "
-          f"for source {source} found in {len(matching)} hub file(s)")
-    for mid in message_ids:
+    print(f"Hub postcondition verified: {len(found_heartbeat_ids)} heartbeat "
+          f"ID(s) for source {source} in {len(matching)} hub file(s)")
+    for mid in found_heartbeat_ids:
         print(f"  confirmed: {mid[:16]}…")
     return 0
 
@@ -217,11 +232,11 @@ def main() -> int:
         description="Capture and verify heartbeat hub postcondition")
     sub = parser.add_subparsers(dest="command")
 
-    cap = sub.add_parser("capture", help="Save current outbox message IDs")
+    cap = sub.add_parser("capture")
     cap.add_argument("--outbox", default="data/federation/nadi_outbox.json")
     cap.add_argument("--output", default="heartbeat-proof.json")
 
-    ver = sub.add_parser("verify", help="Verify message IDs in hub")
+    ver = sub.add_parser("verify")
     ver.add_argument("--proof", default="heartbeat-proof.json")
 
     args = parser.parse_args()
