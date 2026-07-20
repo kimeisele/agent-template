@@ -77,6 +77,15 @@ def _check_topic() -> bool | None:
     return None
 
 
+def _check_pytest_available() -> bool:
+    """Return True if pytest can be invoked."""
+    result = subprocess.run(
+        [sys.executable, "-m", "pytest", "--version"],
+        capture_output=True, text=True,
+    )
+    return result.returncode == 0
+
+
 def _repo_arg() -> list[str]:
     """Return ``['--repo', 'owner/name']`` if a saved config exists, else ``[]``."""
     config_path = REPO_ROOT / ".federation-setup.json"
@@ -127,7 +136,14 @@ def main() -> int:
 
     # Step 3: Tests
     print(f"\n{BOLD}3. Run tests{RESET}")
-    ok &= _run("pytest", "-m", "pytest", "tests/", "-q")
+    if _check_pytest_available():
+        ok &= _run("pytest", "-m", "pytest", "tests/", "-q")
+    else:
+        print(
+            f"  {RED}pytest not found.{RESET}\n"
+            f"  Install test dependencies: {CYAN}pip install -e \".[dev]\"{RESET}"
+        )
+        ok = False
 
     # Step 4: Discovery (optional, may fail without network)
     print(f"\n{BOLD}4. Peer discovery (seed-based){RESET}")

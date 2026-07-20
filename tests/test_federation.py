@@ -6,6 +6,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SCRIPTS = REPO_ROOT / "scripts"
 
@@ -80,13 +82,20 @@ def test_capabilities_json_valid() -> None:
     assert "produces" in data["federation_interfaces"]
 
 
+nadi_kit = None
+try:
+    import nadi_kit as _nadi_kit  # noqa: F811
+    nadi_kit = _nadi_kit
+except ImportError:
+    pass
+
+nadi_skip_reason = "nadi-kit not installed — install with: pip install -e '.[federation]'"
+
+
 def test_nadi_kit_import() -> None:
     """nadi_kit can be imported and exposes expected API."""
-    import importlib
-
-    # Import from installed nadi-kit package
-    nadi_kit = importlib.import_module("nadi_kit")
-
+    if nadi_kit is None:
+        pytest.skip(nadi_skip_reason)
     assert hasattr(nadi_kit, "NadiNode")
     assert hasattr(nadi_kit, "NadiMessage")
     assert hasattr(nadi_kit, "NadiTransport")
@@ -95,7 +104,8 @@ def test_nadi_kit_import() -> None:
 
 def test_nadi_node_from_peer_json(tmp_path: Path) -> None:
     """NadiNode can be created from a peer.json file."""
-    from nadi_kit import NadiNode
+    if nadi_kit is None:
+        pytest.skip(nadi_skip_reason)
 
     peer_data = {
         "identity": {
@@ -118,7 +128,7 @@ def test_nadi_node_from_peer_json(tmp_path: Path) -> None:
     peer_json = tmp_path / "peer.json"
     peer_json.write_text(json.dumps(peer_data))
 
-    node = NadiNode.from_peer_json(peer_json)
+    node = nadi_kit.NadiNode.from_peer_json(peer_json)
     assert node.agent_id == "test-node"
     assert node.repo == "kimeisele/test-node"
     assert node.capabilities == ["authority-publishing"]
@@ -126,7 +136,8 @@ def test_nadi_node_from_peer_json(tmp_path: Path) -> None:
 
 def test_nadi_node_emit_and_receive(tmp_path: Path) -> None:
     """NadiNode can emit messages and read them back from transport."""
-    from nadi_kit import NadiNode
+    if nadi_kit is None:
+        pytest.skip(nadi_skip_reason)
 
     peer_data = {
         "identity": {"city_id": "emit-test"},
@@ -135,7 +146,7 @@ def test_nadi_node_emit_and_receive(tmp_path: Path) -> None:
     peer_json = tmp_path / "peer.json"
     peer_json.write_text(json.dumps(peer_data))
 
-    node = NadiNode.from_peer_json(peer_json)
+    node = nadi_kit.NadiNode.from_peer_json(peer_json)
     node.emit("ping", {"data": "hello"}, target="steward")
 
     outbox = node.transport.read_outbox()
