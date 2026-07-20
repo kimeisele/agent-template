@@ -158,10 +158,11 @@ python scripts/setup_node.py --non-interactive --apply-governance --name "My Nod
 
 - **Read checks:** Work without authentication (may hit rate limits).
 - **Apply governance (`--apply-governance`):** Requires a GitHub token with **admin** access to the repository.
-- **Federation relay (optional):** Requires two repository secrets:
-  - `FEDERATION_PAT` — a GitHub personal access token with `repo` scope for cross-repo relay to `kimeisele/steward-federation`.
-  - `NODE_PRIVATE_KEY` — an Ed25519 private key for NADI message signing (generated automatically on first `NadiNode` load).
+- **Federation relay (optional):** Requires two repository secrets configured in Settings → Secrets and variables → Actions:
+  - `FEDERATION_PAT` — a GitHub fine-grained personal access token with **Contents: Read and Write** permission on `kimeisele/steward-federation` only. The token is used exclusively for cross-repo outbox relay. Classic `repo` scope tokens also work but are broader than needed.
+  - `NODE_PRIVATE_KEY` — an Ed25519 private key in PEM format (generated automatically on first local `NadiNode` load from `data/federation/.node_keys.json`). **Never commit this file.** In CI, provide the key via the secret; the workflow does not auto-generate ephemeral keys.
 - Without these secrets, core validation and local NADI diagnostics still work. The heartbeat workflow will skip remote relay and display a notice.
+- If a secret is configured but invalid (e.g., expired PAT, unparseable key), the relay step will fail visibly — not silently skip.
 
 After merging your setup PR, the workflows will:
 

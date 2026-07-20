@@ -26,48 +26,56 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Core validation (no secrets required)
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Install core validation dependencies
         run: |
-          python -m pytest tests/ -q --tb=short || echo "::warning ::Some tests did not pass"
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev]"
 
-      - name: Check federation secrets
-        id: check-secrets
+      - name: Core validation
         run: |
-          if [ -z "${{ secrets.FEDERATION_PAT }}" ]; then
-            echo "has-federation-pat=false" >> "$GITHUB_OUTPUT"
+          python -m pytest tests/ -q --tb=short
+          ruff check .
+
+      - name: Check optional federation configuration
+        id: federation-config
+        env:
+          FEDERATION_PAT: ${{ secrets.FEDERATION_PAT }}
+          NODE_PRIVATE_KEY: ${{ secrets.NODE_PRIVATE_KEY }}
+        run: |
+          if [ -z "$FEDERATION_PAT" ]; then
+            echo "remote-enabled=false" >> "$GITHUB_OUTPUT"
+            echo "reason=missing-pat" >> "$GITHUB_OUTPUT"
             echo "::notice ::Remote federation relay skipped: FEDERATION_PAT is not configured. Core validation remains available."
-          else
-            echo "has-federation-pat=true" >> "$GITHUB_OUTPUT"
+            exit 0
           fi
 
-      - name: Install nadi-kit and cryptography
-        if: steps.check-secrets.outputs.has-federation-pat == 'true'
-        run: pip install "nadi-kit @ git+https://github.com/kimeisele/steward-federation.git@c613577b7353d3cb1fd31be542aed8766f195079"
+          if [ -z "$NODE_PRIVATE_KEY" ]; then
+            echo "remote-enabled=false" >> "$GITHUB_OUTPUT"
+            echo "reason=missing-node-key" >> "$GITHUB_OUTPUT"
+            echo "::notice ::Signed remote heartbeat skipped: NODE_PRIVATE_KEY is not configured. Core validation remains available."
+            exit 0
+          fi
+
+          echo "remote-enabled=true" >> "$GITHUB_OUTPUT"
+          echo "reason=configured" >> "$GITHUB_OUTPUT"
+
+      - name: Install nadi-kit
+        if: steps.federation-config.outputs.remote-enabled == 'true'
+        run: |
+          pip install "nadi-kit @ git+https://github.com/kimeisele/steward-federation.git@c613577b7353d3cb1fd31be542aed8766f195079"
 
       - name: Run NADI heartbeat cycle
-        if: steps.check-secrets.outputs.has-federation-pat == 'true'
+        if: steps.federation-config.outputs.remote-enabled == 'true'
         env:
           NODE_PRIVATE_KEY: ${{ secrets.NODE_PRIVATE_KEY }}
           GH_TOKEN: ${{ secrets.FEDERATION_PAT }}
-          GITHUB_TOKEN: ${{ secrets.FEDERATION_PAT }}
         run: |
           python3 -m nadi_kit --peer-json data/federation/peer.json sync
           python3 -m nadi_kit --peer-json data/federation/peer.json heartbeat --health 1.0
           python3 -m nadi_kit --peer-json data/federation/peer.json sync
 
-      - name: Commit federation state
-        if: steps.check-secrets.outputs.has-federation-pat == 'true'
-        run: |
-          git config user.name "federation-bot"
-          git config user.email "bot@federation"
-          git add data/federation/ || true
-          git diff --cached --quiet || git commit -m "chore: heartbeat state"
-          git push || true
-
       - name: Relay outbox to steward-federation hub
-        if: steps.check-secrets.outputs.has-federation-pat == 'true'
+        if: steps.federation-config.outputs.remote-enabled == 'true'
         env:
           GH_TOKEN: ${{ secrets.FEDERATION_PAT }}
         run: |
@@ -94,5 +102,4 @@ jobs:
             sleep $backoff
             git pull --rebase origin main
           done
-          echo "[]" > "$OUTBOX"
-          echo "Outbox relayed and cleared"
+          echo "::notice ::Hub relay confirmed; runner working-copy outbox will be cleared for next cycle."
