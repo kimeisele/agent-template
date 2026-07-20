@@ -916,3 +916,101 @@ class TestBlocker4ReadmeHonesty:
         result = self._run_setup(tmp_path, "test-org/test-node")
         assert "✓ README" not in result.stdout
         assert readme.read_text() == original
+
+
+
+class TestBlocker5ReadmeWithoutH1:
+    """README without H1 heading must still get identity block inserted."""
+
+    def _run_setup(self, repo_root, repo):
+        import subprocess as sp
+        scripts_dest = repo_root / "scripts"
+        scripts_dest.mkdir(parents=True, exist_ok=True)
+        for name in [
+            "setup_node.py", "federation_utils.py",
+            "render_federation_descriptor.py", "render_agent_card.py",
+            "export_authority_feed.py", "discover_federation_peers.py",
+        ]:
+            src = _SCRIPTS / name
+            if src.exists():
+                (scripts_dest / name).write_text(src.read_text())
+        gov_src = _SCRIPTS / "governance"
+        gov_dest = scripts_dest / "governance"
+        if gov_src.exists():
+            gov_dest.mkdir(exist_ok=True)
+            for gov_file in gov_src.iterdir():
+                if gov_file.is_file() and gov_file.suffix == ".py":
+                    (gov_dest / gov_file.name).write_text(gov_file.read_text())
+        return sp.run(
+            [sys.executable, str(scripts_dest / "setup_node.py"),
+             "--non-interactive", "--name", "Proof Node", "--role", "relay",
+             "--repo", repo, "--org", "dummy"],
+            capture_output=True, text=True, cwd=str(repo_root),
+        )
+
+    def _setup_skel(self, tmp_path):
+        (tmp_path / "docs" / "authority").mkdir(parents=True, exist_ok=True)
+        (tmp_path / "data" / "federation").mkdir(parents=True, exist_ok=True)
+        (tmp_path / ".well-known").mkdir(parents=True, exist_ok=True)
+        caps = tmp_path / "docs" / "authority" / "capabilities.json"
+        caps.write_text(json.dumps({"skills": []}))
+        seeds = tmp_path / "data" / "federation" / "authority-descriptor-seeds.json"
+        seeds.write_text(json.dumps({"descriptor_urls": []}))
+
+    def test_readme_without_h1_gets_identity_block(self, tmp_path):
+        """README with no # heading gets identity block prepended."""
+        self._setup_skel(tmp_path)
+        readme = tmp_path / "README.md"
+        original = "Federation node documentation\n\nCustom text.\n"
+        readme.write_text(original)
+        result = self._run_setup(tmp_path, "proof-org/proof-node")
+        assert result.returncode == 0, (
+            f"Setup must succeed.\nstderr: {result.stderr}"
+        )
+        content = readme.read_text()
+        assert content.count("<!-- BEGIN FEDERATION NODE IDENTITY -->") == 1
+        assert content.count("<!-- END FEDERATION NODE IDENTITY -->") == 1
+        assert "Proof Node" in content
+        assert "proof-org/proof-node" in content
+        # Original text fully preserved
+        assert original in content, (
+            f"Original README text must be preserved.\ncontent:\n{content}"
+        )
+        # Output reports success (check for the status message after ANSI codes)
+        assert "README.md (identity block inserted)" in result.stdout or \
+               "README.md (identity block updated)" in result.stdout or \
+               "README.md (identity block unchanged)" in result.stdout or \
+               "README.md (created with identity block)" in result.stdout, (
+            f"Must report README success.\nstdout: {result.stdout}"
+        )
+
+    def test_empty_readme_gets_identity_block(self, tmp_path):
+        """Empty existing README receives the identity block."""
+        self._setup_skel(tmp_path)
+        readme = tmp_path / "README.md"
+        readme.write_text("")
+        result = self._run_setup(tmp_path, "proof-org/proof-node")
+        assert result.returncode == 0
+        content = readme.read_text()
+        assert content.count("<!-- BEGIN FEDERATION NODE IDENTITY -->") == 1
+        assert content.count("<!-- END FEDERATION NODE IDENTITY -->") == 1
+        assert "Proof Node" in content
+        assert "proof-org/proof-node" in content
+        assert "README.md (identity block inserted)" in result.stdout or \
+               "README.md (identity block updated)" in result.stdout or \
+               "README.md (identity block unchanged)" in result.stdout or \
+               "README.md (created with identity block)" in result.stdout
+
+    def test_readme_with_h1_still_inserts_after_heading(self, tmp_path):
+        """README with # heading inserts block after heading, not at top."""
+        self._setup_skel(tmp_path)
+        readme = tmp_path / "README.md"
+        original = "# My Node Title\n\nSome introduction text.\n"
+        readme.write_text(original)
+        result = self._run_setup(tmp_path, "proof-org/proof-node")
+        assert result.returncode == 0
+        content = readme.read_text()
+        assert content.count("<!-- BEGIN FEDERATION NODE IDENTITY -->") == 1
+        assert content.index("# My Node Title") < content.index("<!-- BEGIN FEDERATION NODE IDENTITY -->"), (
+            "Identity block must appear after H1 heading."
+        )

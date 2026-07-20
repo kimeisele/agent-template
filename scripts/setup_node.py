@@ -247,14 +247,18 @@ def _write_readme_identity(config: dict) -> ReadmeResult:
     everything outside the block is preserved byte-for-byte.
 
     Returns a :class:`ReadmeResult` indicating what happened.
+    The result is only ``INSERTED`` or ``UPDATED`` when the postcondition
+    is actually verified by re-reading the file.
     """
     readme_path = REPO_ROOT / "README.md"
     tier = TIERS[config["tier"]]
+    display_name = config["display_name"]
+    github_repo = config["github_repo"]
 
     block_lines = [
         _BLOCK_BEGIN,
-        f"> **Node:** {config['display_name']}",
-        f"> **Repository:** {config['github_repo']}",
+        f"> **Node:** {display_name}",
+        f"> **Repository:** {github_repo}",
         f"> **Tier:** {tier['label']}",
         f"> **Role:** {tier['description']}",
         ">  ",
@@ -276,6 +280,7 @@ def _write_readme_identity(config: dict) -> ReadmeResult:
     end_count = original.count(_BLOCK_END)
 
     if begin_count == 0 and end_count == 0:
+        # No markers — insert the block.
         lines = original.splitlines(keepends=True)
         result_lines: list[str] = []
         inserted = False
@@ -286,8 +291,20 @@ def _write_readme_identity(config: dict) -> ReadmeResult:
                 result_lines.append(block_text)
                 result_lines.append("\n")
                 inserted = True
+        if not inserted:
+            # No H1 heading — prepend block at the top.
+            result_lines = [block_text, "\n\n"] + result_lines
         readme_path.write_text("".join(result_lines))
-        return ReadmeResult.INSERTED
+        # Postcondition: re-read and verify the block was actually inserted.
+        if _readme_identity_block_is_valid(
+            readme_path.read_text(),
+            display_name=display_name,
+            github_repo=github_repo,
+        ):
+            return ReadmeResult.INSERTED
+        # If postcondition fails, the file is in an unexpected state.
+        # Do not claim success.
+        return ReadmeResult.SKIPPED_MALFORMED
 
     if begin_count != 1 or end_count != 1:
         return ReadmeResult.SKIPPED_MALFORMED
@@ -295,7 +312,6 @@ def _write_readme_identity(config: dict) -> ReadmeResult:
     begin_idx = original.index(_BLOCK_BEGIN)
     end_idx = original.index(_BLOCK_END)
     if end_idx < begin_idx:
-        # END appears before BEGIN — malformed.
         return ReadmeResult.SKIPPED_MALFORMED
 
     # Replace existing block content
@@ -305,7 +321,40 @@ def _write_readme_identity(config: dict) -> ReadmeResult:
     if new_content == original:
         return ReadmeResult.UNCHANGED
     readme_path.write_text(new_content)
-    return ReadmeResult.UPDATED
+    # Postcondition: re-read and verify.
+    if _readme_identity_block_is_valid(
+        readme_path.read_text(),
+        display_name=display_name,
+        github_repo=github_repo,
+    ):
+        return ReadmeResult.UPDATED
+    return ReadmeResult.SKIPPED_MALFORMED
+
+
+def _readme_identity_block_is_valid(
+    content: str,
+    *,
+    display_name: str,
+    github_repo: str,
+) -> bool:
+    """Verify that *content* contains exactly one valid identity block.
+
+    Checks marker counts, ordering, and expected identity values.
+    """
+    begin_count = content.count(_BLOCK_BEGIN)
+    end_count = content.count(_BLOCK_END)
+    if begin_count != 1 or end_count != 1:
+        return False
+    begin_idx = content.index(_BLOCK_BEGIN)
+    end_idx = content.index(_BLOCK_END)
+    if end_idx < begin_idx:
+        return False
+    block_content = content[begin_idx:end_idx + len(_BLOCK_END)]
+    if display_name not in block_content:
+        return False
+    if github_repo not in block_content:
+        return False
+    return True
 
 
 def _write_charter(config: dict) -> None:
