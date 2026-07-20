@@ -5,6 +5,15 @@ description = "Shared Python kernel for agent-federation nodes"
 requires-python = ">=3.11"
 license = "MIT"
 
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "ruff>=0.5",
+]
+federation = [
+    "nadi-kit @ git+https://github.com/kimeisele/steward-federation.git@c613577b7353d3cb1fd31be542aed8766f195079",
+]
+
 [build-system]
 requires = ["setuptools>=68.0"]
 build-backend = "setuptools.build_meta"
