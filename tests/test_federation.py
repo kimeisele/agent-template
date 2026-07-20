@@ -83,13 +83,21 @@ def test_capabilities_json_valid() -> None:
     assert "produces" in data["federation_interfaces"]
 
 
-nadi_kit = None
-if importlib.util.find_spec("nadi_kit") is None:
-    nadi_kit = None
-else:
-    import nadi_kit  # noqa: E402
-
 _NADI_SKIP_REASON = "nadi-kit not installed — install with: pip install -e '.[federation]'"
+
+
+def _load_optional_nadi_kit():
+    """Return the ``nadi_kit`` module, or ``None`` if it is not installed.
+
+    Only ``find_spec(...) is None`` (genuine absence) produces ``None``.
+    Any ``ImportError`` from a findable but broken module propagates.
+    """
+    if importlib.util.find_spec("nadi_kit") is None:
+        return None
+    return importlib.import_module("nadi_kit")
+
+
+nadi_kit = _load_optional_nadi_kit()
 
 
 def test_nadi_kit_import() -> None:
@@ -182,85 +190,103 @@ def test_well_known_descriptor_matches_schema() -> None:
     assert required.issubset(data.keys()), f"Missing fields: {required - data.keys()}"
 
 
-# ── NADI import behaviour regression tests ───────────────────────────────
+# ── NADI optional-loader regression tests ────────────────────────────────
+#
+# These tests run in *every* profile (Core and Federation).  They mock
+# ``find_spec`` and ``import_module`` to exercise the guard logic without
+# depending on whether the real ``nadi_kit`` is installed.
 
-class TestNadiImportBehaviour:
-    """Gate 2: Only genuine module absence causes a skip."""
 
-    def test_find_spec_none_causes_skip(self, monkeypatch) -> None:
-        """When find_spec returns None, NADI tests must skip."""
-        import importlib
+class TestNadiOptionalLoader:
+    """Profile-independent tests for :func:`_load_optional_nadi_kit`."""
 
-        original_find_spec = importlib.util.find_spec
+    # ── 1. Genuine absence → None ───────────────────────────────────────
 
-        def _fake_find_spec(name, package=None):
-            if name == "nadi_kit":
-                return None
-            return original_find_spec(name, package)
-
-        monkeypatch.setattr(importlib.util, "find_spec", _fake_find_spec)
-        # Import the guard logic fresh
-        spec = importlib.util.find_spec("nadi_kit")
-        assert spec is None, "guard must see nadi_kit as absent"
-
-    def test_corrupt_module_does_not_skip(self, monkeypatch) -> None:
-        """A findable but broken nadi_kit must fail, not skip."""
-        import importlib
-
-        # Simulate: find_spec succeeds but the actual import would fail.
-        # We cannot make find_spec non-None and import fail in the same
-        # process trivially, so we verify the guard logic directly:
-        # If find_spec returns a non-None value, no skip occurs and
-        # the import is attempted — which will raise if broken.
-        original_find_spec = importlib.util.find_spec
-
-        def _fake_find_spec(name, package=None):
-            if name == "nadi_kit":
-                # Return a real spec for a harmless module so the guard
-                # does NOT set nadi_kit=None.  The actual import of
-                # nadi_kit will then proceed normally.
-                return original_find_spec("json", package)
-            return original_find_spec(name, package)
-
-        monkeypatch.setattr(importlib.util, "find_spec", _fake_find_spec)
-        spec = importlib.util.find_spec("nadi_kit")
-        assert spec is not None, (
-            "guard must see nadi_kit as findable — a corrupt module path "
-            "must result in a visible ImportError, not a silent skip"
+    def test_module_truly_absent_returns_none(self, monkeypatch) -> None:
+        """``find_spec`` returns ``None`` → ``_load_optional_nadi_kit()``
+        returns ``None``."""
+        monkeypatch.setattr(
+            importlib.util, "find_spec",
+            lambda name, package=None: None,
         )
+        result = _load_optional_nadi_kit()
+        assert result is None
 
-    def test_missing_api_fails_visibly(self) -> None:
-        """When nadi_kit is installed but missing expected API, tests fail."""
-        if nadi_kit is None:
-            pytest.skip(_NADI_SKIP_REASON)
-        # If nadi_kit is installed, all asserted attributes must exist
-        assert hasattr(nadi_kit, "NadiNode"), "NadiNode missing from nadi_kit"
-        assert hasattr(nadi_kit, "NadiMessage"), "NadiMessage missing"
-        assert hasattr(nadi_kit, "NadiTransport"), "NadiTransport missing"
-        assert hasattr(nadi_kit, "NadiHubRelay"), "NadiHubRelay missing"
+    def test_module_absent_produces_skip_in_test(
+        self, monkeypatch, tmp_path
+    ) -> None:
+        """With mocked absence, the import-guarded tests skip."""
+        monkeypatch.setattr(
+            importlib.util, "find_spec",
+            lambda name, package=None: None,
+        )
+        nadi = _load_optional_nadi_kit()
+        assert nadi is None
+        with pytest.raises(pytest.skip.Exception):
+            if nadi is None:
+                pytest.skip(_NADI_SKIP_REASON)
 
-    def test_correct_module_all_tests_run(self, tmp_path: Path) -> None:
-        """With correct nadi_kit, all NADI unit tests execute."""
-        if nadi_kit is None:
-            pytest.skip(_NADI_SKIP_REASON)
-        peer = {
-            "identity": {"city_id": "reg-test"},
-            "endpoint": {
-                "city_id": "reg-test",
-                "transport": "filesystem",
-                "location": str(tmp_path),
-            },
-            "nadi": {
-                "outbox": str(tmp_path / "outbox.json"),
-                "inbox": str(tmp_path / "inbox.json"),
-            },
-            "capabilities": [],
-        }
-        peer_json = tmp_path / "peer.json"
-        peer_json.write_text(json.dumps(peer))
-        node = nadi_kit.NadiNode.from_peer_json(peer_json)
-        assert node.agent_id == "reg-test"
-        node.emit("test-op", {"k": "v"}, target="dest")
-        msgs = node.transport.read_outbox()
-        assert len(msgs) == 1
-        assert msgs[0].operation == "test-op"
+    # ── 2. Findable but broken → ImportError propagates ────────────────
+
+    def test_corrupt_module_raises_importerror(self, monkeypatch) -> None:
+        """``find_spec`` succeeds but ``import_module`` raises →
+        ``_load_optional_nadi_kit()`` propagates the error."""
+        monkeypatch.setattr(
+            importlib.util, "find_spec",
+            lambda name, package=None: object(),  # non-None sentinel
+        )
+        monkeypatch.setattr(
+            importlib, "import_module",
+            lambda name: (_ for _ in ()).throw(
+                ImportError("broken transitive dependency")
+            ),
+        )
+        with pytest.raises(ImportError, match="broken transitive dependency"):
+            _load_optional_nadi_kit()
+
+    # ── 3. Module present but API missing → assertion failure ─────────
+
+    def test_missing_api_fails_assertion(self, monkeypatch) -> None:
+        """A module without required symbols fails the API check."""
+        import types
+        fake_module = types.ModuleType("nadi_kit")
+        # Deliberately empty — no NadiNode, NadiMessage etc.
+
+        monkeypatch.setattr(
+            importlib.util, "find_spec",
+            lambda name, package=None: object(),
+        )
+        monkeypatch.setattr(
+            importlib, "import_module",
+            lambda name: fake_module,
+        )
+        mod = _load_optional_nadi_kit()
+        assert mod is not None
+        with pytest.raises(AssertionError):
+            assert hasattr(mod, "NadiNode"), "NadiNode missing from nadi_kit"
+
+    # ── 4. Valid fake module passes API check ─────────────────────────
+
+    def test_valid_fake_module_passes_api_check(self, monkeypatch) -> None:
+        """A module with all required symbols passes validation."""
+        import types
+        fake_module = types.ModuleType("nadi_kit")
+        fake_module.NadiNode = object
+        fake_module.NadiMessage = object
+        fake_module.NadiTransport = object
+        fake_module.NadiHubRelay = object
+
+        monkeypatch.setattr(
+            importlib.util, "find_spec",
+            lambda name, package=None: object(),
+        )
+        monkeypatch.setattr(
+            importlib, "import_module",
+            lambda name: fake_module,
+        )
+        mod = _load_optional_nadi_kit()
+        assert mod is not None
+        assert hasattr(mod, "NadiNode")
+        assert hasattr(mod, "NadiMessage")
+        assert hasattr(mod, "NadiTransport")
+        assert hasattr(mod, "NadiHubRelay")
