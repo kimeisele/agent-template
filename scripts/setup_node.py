@@ -83,19 +83,24 @@ class SetupContext:
 class TopicResult(enum.Enum):
     """Structured outcome of a topic registration attempt."""
 
-    ALREADY_PRESENT = "already_present"     # Topic exists, no write needed
-    ADDED = "added"                         # Topic was successfully added
-    SKIPPED_OFFLINE = "skipped_offline"     # Local/offline mode, no attempt
-    SKIPPED_NO_AUTH = "skipped_no_auth"     # No gh CLI or token available
-    SKIPPED_NO_PERMISSION = "skipped_no_permission"  # Repo not writable
-    FAILED_READ = "failed_read"             # Could not read existing topics
-    FAILED_WRITE = "failed_write"           # Write command failed
-    FAILED_POSTCONDITION = "failed_postcondition"  # Re-read did not confirm
+    ALREADY_PRESENT = "already_present"
+    ADDED = "added"
+    SKIPPED_OFFLINE = "skipped_offline"
+    SKIPPED_NO_GH = "skipped_no_gh"
+    SKIPPED_NO_AUTH = "skipped_no_auth"
+    SKIPPED_NO_PERMISSION = "skipped_no_permission"
+    FAILED_READ = "failed_read"
+    FAILED_WRITE = "failed_write"
+    FAILED_POSTCONDITION = "failed_postcondition"
 
 
 @dataclass
 class TopicRegistration:
-    """Complete result of a topic registration operation."""
+    """Complete result of a topic registration operation.
+
+    *topics_after* is only set when a successful re-read was performed.
+    When the re-read could not be executed, it is empty.
+    """
 
     result: TopicResult
     repository: str
@@ -103,6 +108,21 @@ class TopicRegistration:
     topics_after: list[str]
     message: str = ""
     remote_attempted: bool = False
+
+
+@dataclass(frozen=True)
+class SetupOutcome:
+    """Aggregate result of one setup invocation.
+
+    The *exit_code* is derived from the topic result and governance
+    status according to the Gate-4 contract.
+    """
+
+    topic: TopicRegistration
+    governance: ComplianceStatus
+    local_materialization_complete: bool
+    federation_registration_complete: bool
+    exit_code: int
 
 
 # ── Federation constants ──────────────────────────────────────────────────
@@ -564,10 +584,12 @@ def _regenerate(config: dict) -> None:
             print(f"    {YELLOW}warning: {script} failed: {result.stderr.strip()[:80]}{RESET}")
 
 
-def _read_repository_topics(repo_full_name: str) -> list[str] | None:
+def _read_repository_topics(repo_full_name: str) -> tuple[list[str] | None, str | None]:
     """Read the current topic list for *repo_full_name* via ``gh`` CLI.
 
-    Returns the list of topic names, or ``None`` if they cannot be read.
+    Returns ``(topics, None)`` on success, ``(None, error_class)`` on
+    failure where *error_class* is one of ``"no_gh"``, ``"auth"``,
+    ``"timeout"``, ``"failed"``.
     """
     try:
         result = subprocess.run(
@@ -575,20 +597,50 @@ def _read_repository_topics(repo_full_name: str) -> list[str] | None:
              "--json", "repositoryTopics"],
             capture_output=True, text=True, timeout=15,
         )
-    except (FileNotFoundError, subprocess.TimeoutExpired):
-        return None
+    except FileNotFoundError:
+        return None, "no_gh"
+    except subprocess.TimeoutExpired:
+        return None, "timeout"
+
     if result.returncode != 0:
-        return None
+        stderr_lower = (result.stderr or "").lower()
+        if any(w in stderr_lower for w in
+               ("authentication", "not logged in", "401", "unauthorized")):
+            return None, "auth"
+        if any(w in stderr_lower for w in
+               ("403", "forbidden", "permission", "resource not accessible")):
+            return None, "auth"
+        return None, "failed"
+
     try:
         data = json.loads(result.stdout)
     except json.JSONDecodeError:
-        return None
+        return None, "failed"
     topics = data.get("repositoryTopics", [])
     if not isinstance(topics, list):
-        return None
-    return sorted(
-        {t["name"] for t in topics if isinstance(t, dict) and "name" in t}
+        return None, "failed"
+    return (
+        sorted({t["name"] for t in topics if isinstance(t, dict) and "name" in t}),
+        None,
     )
+
+
+def _classify_write_error(
+    exc: Exception | None, stderr: str
+) -> "TopicResult":
+    """Classify a topic write failure into a TopicResult."""
+    if isinstance(exc, FileNotFoundError):
+        return TopicResult.SKIPPED_NO_GH
+    if isinstance(exc, subprocess.TimeoutExpired):
+        return TopicResult.FAILED_WRITE
+    stderr_lower = (stderr or "").lower()
+    if any(w in stderr_lower for w in
+           ("authentication", "not logged in", "401", "unauthorized")):
+        return TopicResult.SKIPPED_NO_AUTH
+    if any(w in stderr_lower for w in
+           ("403", "forbidden", "permission", "resource not accessible")):
+        return TopicResult.SKIPPED_NO_PERMISSION
+    return TopicResult.FAILED_WRITE
 
 
 def _register_federation_topic(
@@ -617,19 +669,28 @@ def _register_federation_topic(
         )
 
     # 1. Read existing topics
-    topics_before = _read_repository_topics(repo_full_name)
+    topics_before, read_error = _read_repository_topics(repo_full_name)
     if topics_before is None:
+        err_map = {
+            "no_gh": (TopicResult.SKIPPED_NO_GH,
+                       "gh CLI not found. Install GitHub CLI and run: "
+                       "gh auth login"),
+            "auth": (TopicResult.SKIPPED_NO_AUTH,
+                      "Not authenticated. Run: gh auth login"),
+            "timeout": (TopicResult.FAILED_READ,
+                         "Timed out reading repository topics."),
+            "failed": (TopicResult.FAILED_READ,
+                        "Could not read repository topics."),
+        }
+        result_type, msg = err_map.get(
+            read_error, (TopicResult.FAILED_READ, "Could not read topics."))
         return TopicRegistration(
-            result=TopicResult.FAILED_READ,
+            result=result_type,
             repository=repo_full_name,
             topics_before=[],
             topics_after=[],
-            message=(
-                "Could not read repository topics. "
-                "Ensure 'gh' CLI is installed and authenticated "
-                "(gh auth login)."
-            ),
-            remote_attempted=True,
+            message=msg,
+            remote_attempted=(read_error != "no_gh"),
         )
 
     # 2. Already present → no write needed
@@ -643,53 +704,67 @@ def _register_federation_topic(
             remote_attempted=False,
         )
 
-    # 3. Add the topic
+    # 3. Add the topic via gh --add-topic (safe, preserves existing)
+    write_exc: Exception | None = None
     try:
         result = subprocess.run(
             ["gh", "repo", "edit", repo_full_name, "--add-topic", TOPIC],
             capture_output=True, text=True, timeout=15,
         )
-    except (FileNotFoundError, subprocess.TimeoutExpired):
-        return TopicRegistration(
-            result=TopicResult.SKIPPED_NO_AUTH,
-            repository=repo_full_name,
-            topics_before=list(topics_before),
-            topics_after=list(topics_before),
-            message=(
-                "gh CLI not available. "
-                "Manually run: gh repo edit "
-                f"{repo_full_name} --add-topic {TOPIC}"
-            ),
-            remote_attempted=True,
-        )
+    except FileNotFoundError as exc:
+        write_exc = exc
+        result = None
+    except subprocess.TimeoutExpired as exc:
+        write_exc = exc
+        result = None
 
-    if result.returncode != 0:
-        stderr_msg = result.stderr.strip()[:120] if result.stderr else ""
+    if write_exc is not None or (result is not None and result.returncode != 0):
+        stderr_text = ""
+        if result is not None:
+            stderr_text = (result.stderr or "").strip()[:120]
+        classified = _classify_write_error(write_exc, stderr_text)
+        manual_cmd = (
+            f"gh repo edit {repo_full_name} --add-topic {TOPIC}"
+        )
         return TopicRegistration(
-            result=TopicResult.FAILED_WRITE,
+            result=classified,
             repository=repo_full_name,
             topics_before=list(topics_before),
             topics_after=list(topics_before),
             message=(
                 f"Failed to add topic '{TOPIC}'. "
-                f"Manually run: gh repo edit "
-                f"{repo_full_name} --add-topic {TOPIC}"
-                + (f" ({stderr_msg})" if stderr_msg else "")
+                f"Manually run: {manual_cmd}"
+                + (f" ({stderr_text})" if stderr_text else "")
             ),
             remote_attempted=True,
         )
 
     # 4. Re-read postcondition
-    topics_after = _read_repository_topics(repo_full_name)
+    topics_after, _ = _read_repository_topics(repo_full_name)
     if topics_after is None:
         return TopicRegistration(
             result=TopicResult.FAILED_POSTCONDITION,
             repository=repo_full_name,
             topics_before=list(topics_before),
-            topics_after=[TOPIC],  # expected
+            topics_after=[],
             message=(
-                f"Topic '{TOPIC}' was written but could not be verified. "
+                f"Topic '{TOPIC}' was written but re-read failed. "
                 f"Check: gh repo view {repo_full_name} --json repositoryTopics"
+            ),
+            remote_attempted=True,
+        )
+
+    # Full preservation check: all before-topics must survive
+    lost = sorted(set(topics_before) - set(topics_after))
+    if lost:
+        return TopicRegistration(
+            result=TopicResult.FAILED_POSTCONDITION,
+            repository=repo_full_name,
+            topics_before=list(topics_before),
+            topics_after=list(topics_after),
+            message=(
+                f"Topic write postcondition failed; "
+                f"existing topics disappeared: {', '.join(lost)}"
             ),
             remote_attempted=True,
         )
@@ -818,7 +893,7 @@ def apply_config(
     ctx: SetupContext,
     interactive: bool,
     apply_governance: bool,
-) -> int:
+) -> SetupOutcome:
     tier = TIERS[config["tier"]]
     zone = CITY_ZONES.get(config.get("city_zone", ""), {})
 
@@ -942,6 +1017,25 @@ def apply_config(
     print(f"\n  Re-run: {CYAN}python scripts/setup_node.py{RESET}  |  Status: {CYAN}python scripts/setup_node.py --status{RESET}")
     print(f"  Apply governance: {CYAN}python scripts/setup_node.py --apply-governance{RESET}")
 
+    # Compute exit code from topic + governance
+    topic_ok = topic_reg.result in (TopicResult.ALREADY_PRESENT, TopicResult.ADDED)
+    topic_failed = ctx.allow_remote_writes and not topic_ok and \
+        topic_reg.result != TopicResult.SKIPPED_OFFLINE
+
+    exit_code = 0
+    if topic_failed:
+        exit_code = 1
+    elif apply_governance and governance_exit != ComplianceStatus.CONFORMANT:
+        exit_code = 1
+
+    outcome = SetupOutcome(
+        topic=topic_reg,
+        governance=governance_exit,
+        local_materialization_complete=True,  # local files always written
+        federation_registration_complete=federation_complete,
+        exit_code=exit_code,
+    )
+
     # Final status banner
     print()
     if federation_complete:
@@ -959,7 +1053,7 @@ def apply_config(
         print(f"{DIM}  (remote registration incomplete — see topic status above){RESET}")
         print(f"{BOLD}{'─' * 40}{RESET}")
     print()
-    return governance_exit
+    return outcome
 
 
 def _print_topic_result(reg: TopicRegistration) -> None:
@@ -973,6 +1067,8 @@ def _print_topic_result(reg: TopicRegistration) -> None:
         print(f"  {DIM}Topics after:  {', '.join(reg.topics_after)}{RESET}")
     elif reg.result == TopicResult.SKIPPED_OFFLINE:
         print(f"  {DIM}── Topic registration skipped (local/offline mode) ──{RESET}")
+    elif reg.result == TopicResult.SKIPPED_NO_GH:
+        print(f"  {YELLOW}!{RESET} Topic registration skipped — {reg.message}")
     elif reg.result == TopicResult.SKIPPED_NO_AUTH:
         print(f"  {YELLOW}!{RESET} Topic registration skipped — {reg.message}")
     elif reg.result == TopicResult.SKIPPED_NO_PERMISSION:
@@ -1206,15 +1302,13 @@ def main() -> int:
             # User aborted or identity not resolvable.
             return 1
 
-    governance_exit = apply_config(
+    outcome = apply_config(
         config,
         ctx=ctx,
         interactive=not args.non_interactive,
         apply_governance=args.apply_governance,
     )
-    if args.apply_governance:
-        return governance_exit
-    return 0
+    return outcome.exit_code
 
 
 def _resolve_non_interactive(args) -> tuple[SetupContext, dict | None]:
