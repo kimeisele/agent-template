@@ -1547,12 +1547,9 @@ class TestDisplayNamePropagation:
     def test_configured_display_name_in_descriptor(self, tmp_path: Path) -> None:
         self._cp(tmp_path, "render_federation_descriptor.py", "federation_utils.py")
         (tmp_path / "docs" / "authority").mkdir(parents=True)
+        # Name comes from committed capabilities.json, not .federation-setup.json
         (tmp_path / "docs" / "authority" / "capabilities.json").write_text(
-            json.dumps({"skills": []}))
-        (tmp_path / ".federation-setup.json").write_text(json.dumps({
-            "display_name": "My Custom Node Name",
-            "github_repo": "org/some-slug",
-        }))
+            json.dumps({"skills": [], "display_name": "My Custom Node Name"}))
         out = tmp_path / "descriptor.json"
         subprocess.run(
             [sys.executable, str(tmp_path / "scripts" / "render_federation_descriptor.py"),
@@ -1577,3 +1574,115 @@ class TestDisplayNamePropagation:
         d = json.loads(out.read_text())
         assert d["display_name"] == "Some Slug", (
             f"expected slug-derived name, got {d['display_name']}")
+
+
+class TestHumanDisplayName:
+    """Gate 6: resolve_human_display_name uses committed capabilities.json."""
+
+    def _cp(self, repo_dir: Path, *names: str):
+        d = repo_dir / "scripts"
+        d.mkdir(parents=True, exist_ok=True)
+        for n in names:
+            s = _SCRIPTS / n
+            if s.exists():
+                (d / n).write_text(s.read_text())
+
+    def test_capabilities_name_used(self, tmp_path: Path) -> None:
+        self._cp(tmp_path, "render_federation_descriptor.py", "federation_utils.py")
+        (tmp_path / "docs" / "authority").mkdir(parents=True)
+        (tmp_path / "docs" / "authority" / "capabilities.json").write_text(
+            json.dumps({"skills": [], "display_name": "Human Readable Name"}))
+        out = tmp_path / "descriptor.json"
+        r = subprocess.run(
+            [sys.executable, str(tmp_path / "scripts" / "render_federation_descriptor.py"),
+             "--output", str(out), "--repo", "org/my-node"],
+            capture_output=True, text=True, cwd=str(tmp_path),
+        )
+        assert r.returncode == 0
+        assert json.loads(out.read_text())["display_name"] == "Human Readable Name"
+
+    def test_slug_fallback_when_no_capabilities(self, tmp_path: Path) -> None:
+        self._cp(tmp_path, "render_federation_descriptor.py", "federation_utils.py")
+        (tmp_path / "docs" / "authority").mkdir(parents=True)
+        (tmp_path / "docs" / "authority" / "capabilities.json").write_text(
+            json.dumps({"skills": []}))  # no display_name
+        out = tmp_path / "descriptor.json"
+        r = subprocess.run(
+            [sys.executable, str(tmp_path / "scripts" / "render_federation_descriptor.py"),
+             "--output", str(out), "--repo", "org/my-node"],
+            capture_output=True, text=True, cwd=str(tmp_path),
+        )
+        assert r.returncode == 0
+        assert json.loads(out.read_text())["display_name"] == "My Node"
+
+    def test_stale_setup_config_ignored(self, tmp_path: Path) -> None:
+        """gitignored .federation-setup.json must not affect renderers."""
+        self._cp(tmp_path, "render_federation_descriptor.py", "federation_utils.py")
+        (tmp_path / "docs" / "authority").mkdir(parents=True)
+        (tmp_path / "docs" / "authority" / "capabilities.json").write_text(
+            json.dumps({"skills": [], "display_name": "Correct Name"}))
+        # Stale setup config with different name
+        (tmp_path / ".federation-setup.json").write_text(json.dumps({
+            "display_name": "Wrong Stale Name",
+            "github_repo": "wrong/repo",
+        }))
+        out = tmp_path / "descriptor.json"
+        r = subprocess.run(
+            [sys.executable, str(tmp_path / "scripts" / "render_federation_descriptor.py"),
+             "--output", str(out), "--repo", "org/correct-repo"],
+            capture_output=True, text=True, cwd=str(tmp_path),
+        )
+        assert r.returncode == 0
+        d = json.loads(out.read_text())
+        assert d["display_name"] == "Correct Name"
+        assert d["repo_id"] == "correct-repo"
+
+    def test_empty_whitespace_name_falls_back(self, tmp_path: Path) -> None:
+        self._cp(tmp_path, "render_federation_descriptor.py", "federation_utils.py")
+        (tmp_path / "docs" / "authority").mkdir(parents=True)
+        (tmp_path / "docs" / "authority" / "capabilities.json").write_text(
+            json.dumps({"skills": [], "display_name": "   "}))
+        out = tmp_path / "descriptor.json"
+        r = subprocess.run(
+            [sys.executable, str(tmp_path / "scripts" / "render_federation_descriptor.py"),
+             "--output", str(out), "--repo", "org/my-node"],
+            capture_output=True, text=True, cwd=str(tmp_path),
+        )
+        assert r.returncode == 0
+        assert json.loads(out.read_text())["display_name"] == "My Node"
+
+    def test_fresh_clone_no_setup_config(self, tmp_path: Path) -> None:
+        """Simulate fresh clone: committed caps, no .federation-setup.json."""
+        self._cp(tmp_path, "render_federation_descriptor.py",
+                 "render_agent_card.py", "federation_utils.py")
+        (tmp_path / "docs" / "authority").mkdir(parents=True)
+        (tmp_path / ".well-known").mkdir()
+        (tmp_path / "docs" / "authority" / "capabilities.json").write_text(
+            json.dumps({"skills": [], "display_name": "External Proof Node",
+                        "kind": "agent_capability_manifest", "version": 1,
+                        "federation_interfaces": {"produces": [], "consumes": [],
+                                                  "protocols": []}}))
+
+        # Descriptor
+        r = subprocess.run(
+            [sys.executable, str(tmp_path / "scripts" / "render_federation_descriptor.py"),
+             "--output", str(tmp_path / ".well-known" / "agent-federation.json"),
+             "--repo", "org/proof-node"],
+            capture_output=True, text=True, cwd=str(tmp_path),
+        )
+        assert r.returncode == 0
+        d = json.loads((tmp_path / ".well-known" / "agent-federation.json").read_text())
+        assert d["display_name"] == "External Proof Node"
+        assert d["repo_id"] == "proof-node"
+
+        # Agent card
+        r = subprocess.run(
+            [sys.executable, str(tmp_path / "scripts" / "render_agent_card.py"),
+             "--output", str(tmp_path / ".well-known" / "agent.json"),
+             "--repo", "org/proof-node"],
+            capture_output=True, text=True, cwd=str(tmp_path),
+        )
+        assert r.returncode == 0
+        a = json.loads((tmp_path / ".well-known" / "agent.json").read_text())
+        assert a["name"] == "External Proof Node"
+        assert "org/proof-node" in a["url"]

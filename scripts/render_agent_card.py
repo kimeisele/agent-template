@@ -13,21 +13,7 @@ import json
 import sys
 from pathlib import Path
 
-from federation_utils import resolve_repo_identity, display_name as _slug_to_name, repo_from_setup_config
-
-
-def _configured_display_name(repo_root: Path, repo_name: str) -> str:
-    """Return the configured display_name, or the slug-derived name."""
-    config_path = repo_root / ".federation-setup.json"
-    if config_path.exists() and repo_from_setup_config(repo_root):
-        try:
-            config = json.loads(config_path.read_text())
-            name = config.get("display_name")
-            if name and isinstance(name, str) and name.strip():
-                return name.strip()
-        except (json.JSONDecodeError, OSError):
-            pass
-    return _slug_to_name(repo_name)
+from federation_utils import resolve_human_display_name, resolve_repo_identity
 
 
 def _load_descriptor(repo_root: Path) -> dict:
@@ -61,7 +47,7 @@ def main() -> int:
     repo_owner, repo_name = repo.split("/", 1)
     descriptor = _load_descriptor(repo_root)
     manifest = _load_capability_manifest(repo_root)
-    name = descriptor.get("display_name") or _configured_display_name(repo_root, repo_name)
+    name = descriptor.get("display_name") or resolve_human_display_name(repo_root, repo_name)
     description = manifest.get("description") or f"{name} — a federation node in the agent-internet."
 
     card = {

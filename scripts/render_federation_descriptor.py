@@ -5,7 +5,7 @@ import json
 import sys
 from pathlib import Path
 
-from federation_utils import display_name, repo_from_setup_config, resolve_repo_identity
+from federation_utils import resolve_human_display_name, resolve_repo_identity
 
 
 def _load_capabilities(repo_root: Path) -> list[str]:
@@ -14,22 +14,6 @@ def _load_capabilities(repo_root: Path) -> list[str]:
         data = json.loads(caps_path.read_text())
         return [s["id"] for s in data.get("skills", [])]
     return ["authority-publishing"]
-
-
-def _configured_display_name(repo_root: Path, repo_name: str) -> str:
-    """Return the configured display_name from .federation-setup.json,
-    falling back to the slug-derived name."""
-    config_repo = repo_from_setup_config(repo_root)
-    config_path = repo_root / ".federation-setup.json"
-    if config_path.exists() and config_repo:
-        try:
-            config = json.loads(config_path.read_text())
-            name = config.get("display_name")
-            if name and isinstance(name, str) and name.strip():
-                return name.strip()
-        except (json.JSONDecodeError, OSError):
-            pass
-    return display_name(repo_name)
 
 
 def main() -> int:
@@ -54,7 +38,7 @@ def main() -> int:
         "kind": "agent_federation_descriptor",
         "version": 1,
         "repo_id": repo_name,
-        "display_name": _configured_display_name(repo_root, repo_name),
+        "display_name": resolve_human_display_name(repo_root, repo_name),
         "authority_feed_manifest_url": f"https://raw.githubusercontent.com/{repo_owner}/{repo_name}/authority-feed/latest-authority-manifest.json",
         "projection_intents": list(dict.fromkeys(args.intent)),
         "status": args.status,
