@@ -3,8 +3,7 @@
 > **Status:** IN PROGRESS  
 > **Template:** `kimeisele/agent-template` @ `71da4c7b0cbca73d78ddeaee9ac68d11b6f15e34`  
 > **Final Candidate:** `kimeisele/agent-template-acceptance-node-05`  
-> **Node main SHA:** `bf4080022e5ee8b95330ecb89fe1568b8160735c`  
-> **PR #16 Head:** `01a6fc9c90328af2a85520eccf39730560912541`
+> **Node main SHA:** `bf4080022e5ee8b95330ecb89fe1568b8160735c`
 
 ## Offline Proofs — PASS
 
