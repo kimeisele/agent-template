@@ -199,8 +199,10 @@ class TestPostconditionCLI:
 class TestCaptureBehavior:
     def _capture(self, outbox, tmp_path):
         p = tmp_path / "proof.json"
+        peer = tmp_path / "peer.json"
+        peer.write_text(json.dumps({"identity": {"city_id": "test-node"}}))
         from heartbeat_postcondition import cmd_capture
-        ec = cmd_capture(str(outbox), str(p))
+        ec = cmd_capture(str(outbox), str(peer), str(p))
         return ec, p
 
     def test_heartbeat_present_succeeds(self, tmp_path):
@@ -215,7 +217,8 @@ class TestCaptureBehavior:
         d = json.loads(pf.read_text())
         assert d["heartbeat_message_ids"] == ["hb-1"]
         assert d["additional_message_ids"] == ["cl-1"]
-        assert d["source_node_id"] == "ag_x"
+        assert d["message_source"] == "ag_x"
+        assert d["hub_agent_id"] == "test-node"
 
     def test_no_heartbeat_fails(self, tmp_path):
         outbox = tmp_path / "outbox.json"
@@ -255,7 +258,7 @@ class TestVerifyBehavior:
     def test_correct_id_source_op_succeeds(self, tmp_path, monkeypatch):
         monkeypatch.setattr(
             "heartbeat_postcondition._list_hub_nadi_files",
-            lambda: [{"name": "ag_x_to_steward.json",
+            lambda: [{"name": "my-node_to_steward.json",
                       "url": "https://api.github.com/repos/x/contents/nadi/ag_x_to_steward.json"}],
         )
         monkeypatch.setattr(
@@ -264,7 +267,8 @@ class TestVerifyBehavior:
                           "operation": "heartbeat"}],
         )
         ec = self._verify({
-            "source_node_id": "ag_x",
+            "hub_agent_id": "my-node",
+            "message_source": "ag_x",
             "heartbeat_message_ids": ["hb-1"],
             "captured_at": 1000,
         }, tmp_path)
@@ -273,7 +277,7 @@ class TestVerifyBehavior:
     def test_old_id_same_source_fails(self, tmp_path, monkeypatch):
         monkeypatch.setattr(
             "heartbeat_postcondition._list_hub_nadi_files",
-            lambda: [{"name": "ag_x_to_steward.json", "url": "https://api.github.com/repos/x/contents/nadi/x"}],
+            lambda: [{"name": "my-node_to_steward.json", "url": "https://api.github.com/repos/x/contents/nadi/x"}],
         )
         monkeypatch.setattr(
             "heartbeat_postcondition._fetch_hub_file",
@@ -281,7 +285,8 @@ class TestVerifyBehavior:
                           "operation": "heartbeat"}],
         )
         ec = self._verify({
-            "source_node_id": "ag_x",
+            "hub_agent_id": "my-node",
+            "message_source": "ag_x",
             "heartbeat_message_ids": ["new-id"],
             "captured_at": 2000,
         }, tmp_path)
@@ -290,7 +295,7 @@ class TestVerifyBehavior:
     def test_right_id_wrong_source_fails(self, tmp_path, monkeypatch):
         monkeypatch.setattr(
             "heartbeat_postcondition._list_hub_nadi_files",
-            lambda: [{"name": "ag_y_to_steward.json", "url": "https://api.github.com/repos/x/contents/nadi/x"}],
+            lambda: [{"name": "my-node_to_steward.json", "url": "https://api.github.com/repos/x/contents/nadi/x"}],
         )
         monkeypatch.setattr(
             "heartbeat_postcondition._fetch_hub_file",
@@ -298,7 +303,8 @@ class TestVerifyBehavior:
                           "operation": "heartbeat"}],
         )
         ec = self._verify({
-            "source_node_id": "ag_x",
+            "hub_agent_id": "my-node",
+            "message_source": "ag_x",
             "heartbeat_message_ids": ["hb-1"],
             "captured_at": 1000,
         }, tmp_path)
@@ -307,7 +313,7 @@ class TestVerifyBehavior:
     def test_right_id_wrong_op_fails(self, tmp_path, monkeypatch):
         monkeypatch.setattr(
             "heartbeat_postcondition._list_hub_nadi_files",
-            lambda: [{"name": "ag_x_to_steward.json", "url": "https://api.github.com/repos/x/contents/nadi/x"}],
+            lambda: [{"name": "my-node_to_steward.json", "url": "https://api.github.com/repos/x/contents/nadi/x"}],
         )
         monkeypatch.setattr(
             "heartbeat_postcondition._fetch_hub_file",
@@ -315,7 +321,8 @@ class TestVerifyBehavior:
                           "operation": "not-heartbeat"}],
         )
         ec = self._verify({
-            "source_node_id": "ag_x",
+            "hub_agent_id": "my-node",
+            "message_source": "ag_x",
             "heartbeat_message_ids": ["hb-1"],
             "captured_at": 1000,
         }, tmp_path)
@@ -326,7 +333,8 @@ class TestVerifyBehavior:
             "heartbeat_postcondition._list_hub_nadi_files",
             lambda: None)
         ec = self._verify({
-            "source_node_id": "ag_x",
+            "hub_agent_id": "my-node",
+            "message_source": "ag_x",
             "heartbeat_message_ids": ["hb-1"],
             "captured_at": 1000,
         }, tmp_path)
@@ -537,7 +545,7 @@ class TestFetchHubFile:
         monkeypatch.setattr(
             "heartbeat_postcondition._list_hub_nadi_files",
             lambda: [{
-                "name": "ag_x_to_steward.json",
+                "name": "my-node_to_steward.json",
                 "url": "https://api.github.com/repos/o/r/contents/nadi/node_x_to_steward.json",
                 "download_url": "https://raw.githubusercontent.com/o/r/main/nadi/node_x_to_steward.json",
             }],
@@ -555,7 +563,8 @@ class TestFetchHubFile:
         with tempfile.NamedTemporaryFile(mode="w", suffix=".json",
                                           delete=False) as f:
             _json.dump({
-                "source_node_id": "ag_x",
+                "hub_agent_id": "my-node",
+            "message_source": "ag_x",
                 "heartbeat_message_ids": ["hb-1"],
                 "captured_at": 1000,
             }, f)
@@ -766,3 +775,152 @@ except Exception as exc:
             assert not keys_path.exists(), (
                 ".node_keys.json must not be created in CI"
             )
+
+
+class TestPostconditionAgentId:
+    """Postcondition captures hub_agent_id from peer.json city_id."""
+
+    def test_capture_includes_hub_agent_id(self, tmp_path: Path) -> None:
+        outbox = tmp_path / "outbox.json"
+        outbox.write_text(json.dumps([
+            {"id": "hb-1", "source": "ag_crypto123", "operation": "heartbeat"},
+        ]))
+        peer = tmp_path / "peer.json"
+        peer.write_text(json.dumps({
+            "identity": {"city_id": "my-node-name", "slug": "my-node-name"},
+        }))
+        proof = tmp_path / "proof.json"
+        from heartbeat_postcondition import cmd_capture
+        assert cmd_capture(str(outbox), str(peer), str(proof)) == 0
+        d = json.loads(proof.read_text())
+        assert d["hub_agent_id"] == "my-node-name"
+        assert d["message_source"] == "ag_crypto123"
+        assert d["heartbeat_message_ids"] == ["hb-1"]
+
+    def test_hub_agent_id_differs_from_message_source(self, tmp_path: Path) -> None:
+        """hub_agent_id (city_id) and message_source (crypto) are different."""
+        outbox = tmp_path / "outbox.json"
+        outbox.write_text(json.dumps([
+            {"id": "hb-1", "source": "ag_crypto999", "operation": "heartbeat"},
+        ]))
+        peer = tmp_path / "peer.json"
+        peer.write_text(json.dumps({
+            "identity": {"city_id": "human-readable-name"},
+        }))
+        proof = tmp_path / "proof.json"
+        from heartbeat_postcondition import cmd_capture
+        cmd_capture(str(outbox), str(peer), str(proof))
+        d = json.loads(proof.read_text())
+        assert d["hub_agent_id"] == "human-readable-name"
+        assert d["message_source"] == "ag_crypto999"
+        assert d["hub_agent_id"] != d["message_source"]
+
+    def test_missing_city_id_fails(self, tmp_path: Path) -> None:
+        outbox = tmp_path / "outbox.json"
+        outbox.write_text(json.dumps([
+            {"id": "hb-1", "source": "ag_x", "operation": "heartbeat"},
+        ]))
+        peer = tmp_path / "peer.json"
+        peer.write_text(json.dumps({"identity": {}}))
+        from heartbeat_postcondition import cmd_capture
+        assert cmd_capture(str(outbox), str(peer),
+                           str(tmp_path / "proof.json")) != 0
+
+    def test_malformed_peer_fails(self, tmp_path: Path) -> None:
+        outbox = tmp_path / "outbox.json"
+        outbox.write_text(json.dumps([
+            {"id": "hb-1", "source": "ag_x", "operation": "heartbeat"},
+        ]))
+        peer = tmp_path / "peer.json"
+        peer.write_text("not json")
+        from heartbeat_postcondition import cmd_capture
+        assert cmd_capture(str(outbox), str(peer),
+                           str(tmp_path / "proof.json")) != 0
+
+    def test_legacy_proof_without_hub_agent_id_fails_verify(self, tmp_path: Path) -> None:
+        """Pre-fix proof files (no hub_agent_id) must fail closed."""
+        proof = tmp_path / "proof.json"
+        proof.write_text(json.dumps({
+            "source_node_id": "ag_old",
+            "heartbeat_message_ids": ["hb-1"],
+            "captured_at": 1000,
+        }))
+        from heartbeat_postcondition import cmd_verify
+        assert cmd_verify(str(proof)) != 0
+
+
+class TestCaptureValidation:
+    """Structural validation of outbox and peer.json."""
+
+    def _peer(self, tmp_path):
+        p = tmp_path / "peer.json"
+        p.write_text(json.dumps({"identity": {"city_id": "test-node"}}))
+        return p
+
+    def test_first_entry_not_object_fails(self, tmp_path):
+        outbox = tmp_path / "outbox.json"
+        outbox.write_text(json.dumps(["not_an_object"]))
+        from heartbeat_postcondition import cmd_capture
+        assert cmd_capture(str(outbox), str(self._peer(tmp_path)),
+                           str(tmp_path / "proof.json")) != 0
+
+    def test_identity_null_fails(self, tmp_path):
+        outbox = tmp_path / "outbox.json"
+        outbox.write_text(json.dumps([
+            {"id": "hb", "source": "ag_x", "operation": "heartbeat"},
+        ]))
+        peer = tmp_path / "peer.json"
+        peer.write_text(json.dumps({"identity": None}))
+        from heartbeat_postcondition import cmd_capture
+        assert cmd_capture(str(outbox), str(peer),
+                           str(tmp_path / "proof.json")) != 0
+
+    def test_identity_string_fails(self, tmp_path):
+        outbox = tmp_path / "outbox.json"
+        outbox.write_text(json.dumps([
+            {"id": "hb", "source": "ag_x", "operation": "heartbeat"},
+        ]))
+        peer = tmp_path / "peer.json"
+        peer.write_text(json.dumps({"identity": "not_an_object"}))
+        from heartbeat_postcondition import cmd_capture
+        assert cmd_capture(str(outbox), str(peer),
+                           str(tmp_path / "proof.json")) != 0
+
+    def test_missing_source_fails(self, tmp_path):
+        outbox = tmp_path / "outbox.json"
+        outbox.write_text(json.dumps([
+            {"id": "hb", "operation": "heartbeat"},  # no source
+        ]))
+        from heartbeat_postcondition import cmd_capture
+        assert cmd_capture(str(outbox), str(self._peer(tmp_path)),
+                           str(tmp_path / "proof.json")) != 0
+
+    def test_empty_id_fails(self, tmp_path):
+        outbox = tmp_path / "outbox.json"
+        outbox.write_text(json.dumps([
+            {"id": "", "source": "ag_x", "operation": "heartbeat"},
+        ]))
+        from heartbeat_postcondition import cmd_capture
+        assert cmd_capture(str(outbox), str(self._peer(tmp_path)),
+                           str(tmp_path / "proof.json")) != 0
+
+    def test_mixed_valid_and_sourceless_fails(self, tmp_path):
+        outbox = tmp_path / "outbox.json"
+        outbox.write_text(json.dumps([
+            {"id": "hb-1", "source": "ag_x", "operation": "heartbeat"},
+            {"id": "hb-2", "operation": "heartbeat"},  # no source
+        ]))
+        from heartbeat_postcondition import cmd_capture
+        assert cmd_capture(str(outbox), str(self._peer(tmp_path)),
+                           str(tmp_path / "proof.json")) != 0
+
+    def test_empty_city_id_fails(self, tmp_path):
+        outbox = tmp_path / "outbox.json"
+        outbox.write_text(json.dumps([
+            {"id": "hb", "source": "ag_x", "operation": "heartbeat"},
+        ]))
+        peer = tmp_path / "peer.json"
+        peer.write_text(json.dumps({"identity": {"city_id": "   "}}))
+        from heartbeat_postcondition import cmd_capture
+        assert cmd_capture(str(outbox), str(peer),
+                           str(tmp_path / "proof.json")) != 0
