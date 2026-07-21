@@ -1782,3 +1782,74 @@ class TestHumanDisplayName:
             d = json.loads(out.read_text())
             assert d["display_name"] == "Safe Slug", (
                 f"expected slug fallback for {bad_value}, got {d['display_name']}")
+
+
+class TestQuickstartTopicCheck:
+    """Gate 6: _check_topic handles all repositoryTopics shapes safely."""
+
+    def _patch_gh(self, monkeypatch, stdout="", returncode=0, side_effect=None):
+        def _fake_run(cmd, *a, **kw):
+            if side_effect:
+                raise side_effect
+            return subprocess.CompletedProcess(
+                args=cmd, returncode=returncode,
+                stdout=stdout, stderr="")
+        monkeypatch.setattr(subprocess, "run", _fake_run)
+
+    def test_null_topics_is_false(self, monkeypatch) -> None:
+        self._patch_gh(monkeypatch, '{"repositoryTopics":null}')
+        from quickstart import _check_topic
+        assert _check_topic() is False
+
+    def test_empty_list_is_false(self, monkeypatch) -> None:
+        self._patch_gh(monkeypatch, '{"repositoryTopics":[]}')
+        from quickstart import _check_topic
+        assert _check_topic() is False
+
+    def test_no_federation_topic_is_false(self, monkeypatch) -> None:
+        self._patch_gh(monkeypatch,
+                       '{"repositoryTopics":[{"name":"proof-node"}]}')
+        from quickstart import _check_topic
+        assert _check_topic() is False
+
+    def test_has_federation_topic_is_true(self, monkeypatch) -> None:
+        self._patch_gh(monkeypatch,
+                       '{"repositoryTopics":[{"name":"agent-federation-node"}]}')
+        from quickstart import _check_topic
+        assert _check_topic() is True
+
+    def test_null_entry_with_topic_is_true(self, monkeypatch) -> None:
+        self._patch_gh(monkeypatch,
+                       '{"repositoryTopics":[null,{"name":"agent-federation-node"}]}')
+        from quickstart import _check_topic
+        assert _check_topic() is True
+
+    def test_non_list_topics_is_none(self, monkeypatch) -> None:
+        self._patch_gh(monkeypatch, '{"repositoryTopics":"wrong"}')
+        from quickstart import _check_topic
+        assert _check_topic() is None
+
+    def test_null_payload_is_none(self, monkeypatch) -> None:
+        self._patch_gh(monkeypatch, 'null')
+        from quickstart import _check_topic
+        assert _check_topic() is None
+
+    def test_array_payload_is_none(self, monkeypatch) -> None:
+        self._patch_gh(monkeypatch, '[]')
+        from quickstart import _check_topic
+        assert _check_topic() is None
+
+    def test_invalid_json_is_none(self, monkeypatch) -> None:
+        self._patch_gh(monkeypatch, 'not json')
+        from quickstart import _check_topic
+        assert _check_topic() is None
+
+    def test_gh_exit_nonzero_is_none(self, monkeypatch) -> None:
+        self._patch_gh(monkeypatch, '{}', returncode=1)
+        from quickstart import _check_topic
+        assert _check_topic() is None
+
+    def test_gh_not_found_is_none(self, monkeypatch) -> None:
+        self._patch_gh(monkeypatch, side_effect=FileNotFoundError("gh"))
+        from quickstart import _check_topic
+        assert _check_topic() is None

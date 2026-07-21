@@ -69,14 +69,30 @@ def _check_topic() -> bool | None:
             ["gh", "repo", "view", "--json", "repositoryTopics"],
             capture_output=True, text=True, timeout=10, cwd=str(REPO_ROOT),
         )
-        if result.returncode == 0:
-            topic_objs = json.loads(result.stdout).get("repositoryTopics") or []
-            if not isinstance(topic_objs, list):
-                return False
-            return any(t.get("name") == "agent-federation-node" for t in topic_objs)
-    except (FileNotFoundError, subprocess.TimeoutExpired, json.JSONDecodeError):
-        pass
-    return None
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        return None
+
+    if result.returncode != 0:
+        return None
+
+    try:
+        payload = json.loads(result.stdout)
+    except json.JSONDecodeError:
+        return None
+
+    if not isinstance(payload, dict):
+        return None
+
+    topic_objs = payload.get("repositoryTopics")
+    if topic_objs is None:
+        return False
+    if not isinstance(topic_objs, list):
+        return None
+
+    return any(
+        isinstance(t, dict) and t.get("name") == "agent-federation-node"
+        for t in topic_objs
+    )
 
 
 def _check_pytest_available() -> bool:
