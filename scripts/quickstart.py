@@ -70,7 +70,9 @@ def _check_topic() -> bool | None:
             capture_output=True, text=True, timeout=10, cwd=str(REPO_ROOT),
         )
         if result.returncode == 0:
-            topic_objs: list[dict] = json.loads(result.stdout).get("repositoryTopics", [])
+            topic_objs = json.loads(result.stdout).get("repositoryTopics") or []
+            if not isinstance(topic_objs, list):
+                return False
             return any(t.get("name") == "agent-federation-node" for t in topic_objs)
     except (FileNotFoundError, subprocess.TimeoutExpired, json.JSONDecodeError):
         pass
