@@ -11,8 +11,12 @@ from federation_utils import resolve_human_display_name, resolve_repo_identity
 def _load_capabilities(repo_root: Path) -> list[str]:
     caps_path = repo_root / "docs" / "authority" / "capabilities.json"
     if caps_path.exists():
-        data = json.loads(caps_path.read_text())
-        return [s["id"] for s in data.get("skills", [])]
+        try:
+            data = json.loads(caps_path.read_text())
+        except (json.JSONDecodeError, OSError):
+            return ["authority-publishing"]
+        if isinstance(data, dict):
+            return [s["id"] for s in data.get("skills", [])]
     return ["authority-publishing"]
 
 

@@ -1686,3 +1686,99 @@ class TestHumanDisplayName:
         a = json.loads((tmp_path / ".well-known" / "agent.json").read_text())
         assert a["name"] == "External Proof Node"
         assert "org/proof-node" in a["url"]
+
+    def test_stale_descriptor_not_used_by_agent_card(self, tmp_path: Path) -> None:
+        """Agent card ignores old descriptor display_name — uses capabilities."""
+        self._cp(tmp_path, "render_federation_descriptor.py",
+                 "render_agent_card.py", "federation_utils.py")
+        (tmp_path / "docs" / "authority").mkdir(parents=True)
+        (tmp_path / ".well-known").mkdir()
+        (tmp_path / "docs" / "authority" / "capabilities.json").write_text(
+            json.dumps({"skills": [], "display_name": "Current Human Name",
+                        "kind": "agent_capability_manifest", "version": 1,
+                        "federation_interfaces": {"produces": [], "consumes": [],
+                                                  "protocols": []}}))
+        # Stale descriptor with old name
+        (tmp_path / ".well-known" / "agent-federation.json").write_text(
+            json.dumps({"display_name": "Old Stale Name", "repo_id": "proof-node"}))
+        r = subprocess.run(
+            [sys.executable, str(tmp_path / "scripts" / "render_agent_card.py"),
+             "--output", str(tmp_path / ".well-known" / "agent.json"),
+             "--repo", "org/proof-node"],
+            capture_output=True, text=True, cwd=str(tmp_path),
+        )
+        assert r.returncode == 0
+        a = json.loads((tmp_path / ".well-known" / "agent.json").read_text())
+        assert a["name"] == "Current Human Name", (
+            f"agent card must use capabilities, not stale descriptor, got {a['name']}")
+        assert "org/proof-node" in a["url"]
+
+    def test_render_order_independent(self, tmp_path: Path) -> None:
+        """Both render orders produce same display_name."""
+        self._cp(tmp_path, "render_federation_descriptor.py",
+                 "render_agent_card.py", "federation_utils.py")
+        (tmp_path / "docs" / "authority").mkdir(parents=True)
+        (tmp_path / ".well-known").mkdir()
+        caps = {"skills": [], "display_name": "Independent Name",
+                "kind": "agent_capability_manifest", "version": 1,
+                "federation_interfaces": {"produces": [], "consumes": [],
+                                          "protocols": []}}
+
+        # Order A: descriptor first
+        td_a = tmp_path / "order-a"
+        td_a.mkdir()
+        (td_a / "docs" / "authority").mkdir(parents=True)
+        (td_a / ".well-known").mkdir()
+        (td_a / "docs" / "authority" / "capabilities.json").write_text(json.dumps(caps))
+        self._cp(td_a, "render_federation_descriptor.py", "render_agent_card.py",
+                 "federation_utils.py")
+        subprocess.run([sys.executable, str(td_a / "scripts" / "render_federation_descriptor.py"),
+                        "--output", str(td_a / ".well-known" / "agent-federation.json"),
+                        "--repo", "org/ind"], capture_output=True, text=True, cwd=str(td_a))
+        subprocess.run([sys.executable, str(td_a / "scripts" / "render_agent_card.py"),
+                        "--output", str(td_a / ".well-known" / "agent.json"),
+                        "--repo", "org/ind"], capture_output=True, text=True, cwd=str(td_a))
+        da = json.loads((td_a / ".well-known" / "agent-federation.json").read_text())
+        aa = json.loads((td_a / ".well-known" / "agent.json").read_text())
+
+        # Order B: agent card first (with stale descriptor)
+        td_b = tmp_path / "order-b"
+        td_b.mkdir()
+        (td_b / "docs" / "authority").mkdir(parents=True)
+        (td_b / ".well-known").mkdir()
+        (td_b / "docs" / "authority" / "capabilities.json").write_text(json.dumps(caps))
+        (td_b / ".well-known" / "agent-federation.json").write_text(
+            json.dumps({"display_name": "Old Stale"}))
+        self._cp(td_b, "render_federation_descriptor.py", "render_agent_card.py",
+                 "federation_utils.py")
+        subprocess.run([sys.executable, str(td_b / "scripts" / "render_agent_card.py"),
+                        "--output", str(td_b / ".well-known" / "agent.json"),
+                        "--repo", "org/ind"], capture_output=True, text=True, cwd=str(td_b))
+        subprocess.run([sys.executable, str(td_b / "scripts" / "render_federation_descriptor.py"),
+                        "--output", str(td_b / ".well-known" / "agent-federation.json"),
+                        "--repo", "org/ind"], capture_output=True, text=True, cwd=str(td_b))
+        db = json.loads((td_b / ".well-known" / "agent-federation.json").read_text())
+        ab = json.loads((td_b / ".well-known" / "agent.json").read_text())
+
+        assert da["display_name"] == "Independent Name"
+        assert aa["name"] == "Independent Name"
+        assert db["display_name"] == "Independent Name"
+        assert ab["name"] == "Independent Name"
+
+    def test_non_dict_capabilities_falls_back(self, tmp_path: Path) -> None:
+        """List/string/number capabilities.json → slug fallback, no traceback."""
+        self._cp(tmp_path, "render_federation_descriptor.py", "federation_utils.py")
+        (tmp_path / "docs" / "authority").mkdir(parents=True)
+
+        for bad_value in ('[]', '"text"', '42', 'null'):
+            (tmp_path / "docs" / "authority" / "capabilities.json").write_text(bad_value)
+            out = tmp_path / "descriptor.json"
+            r = subprocess.run(
+                [sys.executable, str(tmp_path / "scripts" / "render_federation_descriptor.py"),
+                 "--output", str(out), "--repo", "org/safe-slug"],
+                capture_output=True, text=True, cwd=str(tmp_path),
+            )
+            assert r.returncode == 0, f"must not crash on {bad_value}"
+            d = json.loads(out.read_text())
+            assert d["display_name"] == "Safe Slug", (
+                f"expected slug fallback for {bad_value}, got {d['display_name']}")

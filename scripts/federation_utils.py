@@ -440,6 +440,9 @@ def resolve_human_display_name(repo_root: Path, repo_name: str) -> str:
     except (OSError, json.JSONDecodeError):
         return display_name(repo_name)
 
+    if not isinstance(data, dict):
+        return display_name(repo_name)
+
     name = data.get("display_name")
     if isinstance(name, str) and name.strip():
         return name.strip()
