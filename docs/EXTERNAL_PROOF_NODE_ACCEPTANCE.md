@@ -1,208 +1,120 @@
 # Gate 6 — External Proof Node Acceptance
 
 > **Status:** IN PROGRESS  
-> **Date:** 2026-07-20  
-> **Template:** `kimeisele/agent-template` @ `2555287077a9b7527db6a7779501a947ff839de0`  
-> **Proof Node:** `kimeisele/agent-template-proof-node-01`  
-> **Setup Branch:** `proof/materialize-external-node` @ `00d2a91`  
-> **Setup PR:** https://github.com/kimeisele/agent-template-proof-node-01/pull/1
+> **Template:** `kimeisele/agent-template` @ `71da4c7` (post PR #17–#21)  
+> **Final Candidate:** `kimeisele/agent-template-acceptance-node-05`  
+> **Node main SHA:** `bf4080022e5ee8b95330ecb89fe1568b8160735c`
 
----
+## Offline Proofs — PASS
 
-## 1. Template Source — PASS
+| Check | Result |
+|-------|--------|
+| Core `.[dev]` | 255 passed, 13 skipped, Exit 0 |
+| Federation `.[dev,federation]` | 268 passed, Exit 0 |
+| Display name | "Final Acceptance Node 05" (5/5 artifacts) |
+| Machine identity | `repo_id` = `agent-template-acceptance-node-05` |
+| Governance | `agent-federation-baseline-v1` ACTIVE, CONFORMANT |
+| Direct push blocked | Yes — "Changes must be made through a pull request." |
+| `.venv*` gitignore | Present |
+| Inbox/outbox | Empty |
+| `.node_keys.json` | Not present |
 
-- Template: `kimeisele/agent-template` @ `2555287`
-- Created via GitHub "Use this template" API: `POST /repos/kimeisele/agent-template/generate`
-- Proof repo: `https://github.com/kimeisele/agent-template-proof-node-01`
-- Initial commit: identical to template `main`
+## Live Proofs
 
----
+### 1. Secretless Workflow — PASS
 
-## 2. Installation — PASS
+| Field | Value |
+|-------|-------|
+| **Run ID** | `29848638989` |
+| **SHA** | `bf40800` |
+| **Conclusion** | **SUCCESS** |
+| **Guard** | `REMOTE_DISABLED_MISSING_PAT` |
+| **Relay** | All skipped, clear notice |
 
-### Core Profile
-```bash
-python -m venv .venv-core-proof
-source .venv-core-proof/bin/activate
-pip install -e ".[dev]"
-pytest tests/ -q
-ruff check .
-```
-- **Exit:** 1 (4 daemon subprocess tests need nadi-kit)
-- **Tests:** 236 passed, 7 skipped, ruff clean
+### 2. Invalid-Key — PASS
 
-### Federation Profile
-```bash
-source .venv-federation-proof/bin/activate
-pip install -e ".[dev,federation]"
-pytest tests/ -q
-ruff check .
-```
-- **Exit:** 0
-- **Tests:** 247 passed, 0 skipped, ruff clean
-- **nadi-kit:** 0.1.2 @ `c613577b7353d3cb1fd31be542aed8766f195079`
+| Field | Value |
+|-------|-------|
+| **Run ID** | `29848940075` |
+| **SHA** | `bf40800` |
+| **Conclusion** | **FAILURE** (expected) |
+| **Error** | `RuntimeError: No usable node identity: NODE_PRIVATE_KEY is unset or unparseable` |
+| **Fallback** | None generated, no `.node_keys.json` |
 
----
+### 3. False-Success Guard — PASS
 
-## 3. Offline Setup — PASS
+| Field | Value |
+|-------|-------|
+| **Run ID** | `29849222134` |
+| **SHA** | `bf40800` |
+| **Conclusion** | **FAILURE** |
+| **Key load** | Yes — `loaded PEM-encoded secret from NODE_PRIVATE_KEY env` |
+| **Messages** | 8 heartbeat + 1 federation.agent_claim signed |
+| **Source** | `ag_ed8a1079acc8c9e6` |
+| **Final sync** | `pushed=9, exit 0` |
+| **Hub postcondition** | FAIL — `no hub files for source ag_ed8a1079acc8c9e6` |
 
-**Branch:** `proof/materialize-external-node` @ `00d2a91`
+**Architecture finding:** nadi-kit `pushed` counter and exit code are non-authoritative for remote persistence. The exact-message postcondition is the only reliable success indicator.
 
-```bash
-python scripts/setup_node.py --non-interactive \
-  --name "External Federation Proof Node 01" --role research
-```
+### 4. Restricted-PAT — BLOCKED_MANUAL_CREDENTIAL
 
-**Exit:** 0  
-**Banner:** `LOCAL MATERIALIZATION COMPLETE`
+Requires fine-grained PAT: Repository `kimeisele/steward-federation`, Contents: Read only.
 
-### Identity Matrix
+### 5. Valid Remote Heartbeat E2E — BLOCKED_MANUAL_CREDENTIAL
 
-| Field | Value | Source |
-|-------|-------|--------|
-| `display_name` (config) | `External Federation Proof Node 01` | --name CLI arg |
-| `github_repo` | `kimeisele/agent-template-proof-node-01` | git remote origin |
-| `repo_name` | `agent-template-proof-node-01` | git remote slug |
-| Descriptor `repo_id` | `agent-template-proof-node-01` | Renderer from repo |
-| Descriptor `display_name` | `Agent Template Proof Node 01` | Renderer from slug (by design) |
-| Agent Card `name` | `Agent Template Proof Node 01` | From descriptor |
-| Agent Card `description` | `External Federation Proof Node 01 — a federation node` | From capabilities.json (setup) |
-| Charter title | `External Federation Proof Node 01 Charter` | Setup wrote |
-| README identity | `External Federation Proof Node 01` | Setup wrote |
-| Package name | `federation-node-kernel` | Static kernel name (by design) |
+Requires fine-grained PAT: Repository `kimeisele/steward-federation`, Contents: Read and Write.
 
-**Note:** Descriptor `display_name` and Agent Card `name` derive from repo slug via `display_name()` function. This is by design — federation identity is machine-readable and repository-derived. The human "Node name" goes into charter, README, and capabilities description.
+## Workflow Inventory
 
-### Generated Files
+| Workflow | Latest Run | SHA | Conclusion |
+|----------|-----------|-----|------------|
+| `sync-agent-card.yml` | `29848524256` | `bf40800` | SUCCESS |
+| `sync-federation-descriptor.yml` | `29848524180` | `bf40800` | SUCCESS |
+| `publish-authority-feed.yml` | `29848524726` | `bf40800` | SUCCESS |
+| `heartbeat.yml` | `29854586384` | `bf40800` | FAILURE (no write PAT) |
+| `federation-discovery.yml` | scheduled weekly | — | PENDING |
 
-```text
-M  .well-known/agent-federation.json
-M  .well-known/agent.json
-M  README.md
-M  data/federation/peer.json
-M  data/federation/nadi_inbox.json
-M  data/federation/nadi_outbox.json
-M  docs/authority/capabilities.json
-M  docs/authority/charter.md
-A  .federation-setup.json  (gitignored, not committed)
-```
+## Final Reclone — PENDING
 
-### Non-committed Files
+After valid heartbeat E2E PASS.
 
-`.federation-setup.json` is gitignored (`.gitignore:5`). A fresh clone re-derives identity from git remote via `resolve_repo_identity()`.
+## Acceptance Matrix
 
----
+| AT-REC | Finding | Gate | Status |
+|--------|---------|------|--------|
+| AT-REC-001 | NADI outbox path | 3 | PASS |
+| AT-REC-002 | Renderer fallback | 1 | PASS |
+| AT-REC-003 | Topic destructive | 4 | PASS |
+| AT-REC-004 | Package identity | 1 | PASS |
+| AT-REC-005 | Dev dependencies | 2 | PASS |
+| AT-REC-006 | Non-interactive guess | 1 | PASS |
+| AT-REC-007 | Workflow hardcoded | 5 | PASS |
+| AT-REC-008 | Push-to-main | 5 | PASS |
+| AT-REC-009 | Static test counts | 5 | PASS |
+| AT-REC-010 | Test identity | 1 | PASS |
+| AT-REC-011 | Install contract | 2 | PASS |
+| AT-REC-012 | NADI runtime | 2 | PASS |
+| AT-REC-013 | Postcondition | 4 | PASS |
+| AT-REC-014 | Workflow secrets | 5 | PASS |
+| AT-REC-015 | Product claims | 5 | PASS |
+| AT-REC-016 | Package discovery | 1-2 | PASS |
+| AT-REC-017 | NADI docs | 3 | PASS |
 
-## 4. Topic Preservation — PASS
+## Superseded Candidates
 
-```bash
-# Before setup
-gh repo edit --add-topic proof-node
-gh repo edit --add-topic external-acceptance
+| Node | Disposition |
+|------|------------|
+| 01 | Diagnostic (manual fixes) |
+| 02 | Intermediate |
+| 03 | `.venv*` gitignore missing |
+| 04 | Ruff fix direct-pushed, governance absent |
 
-# Setup ran (see §3)
+## Template Fixes Produced (Gate 6)
 
-# After setup
-gh repo view kimeisele/agent-template-proof-node-01 --json repositoryTopics
-```
-
-**Before:** `["proof-node", "external-acceptance"]`  
-**After:** `["proof-node", "external-acceptance", "agent-federation-node"]`  
-**Exit:** 0  
-**TopicResult:** `ADDED`  
-**Re-read:** confirmed
-
----
-
-## 5. Quickstart + Drift — PASS
-
-```bash
-shasum -a 256 .well-known/agent-federation.json .well-known/agent.json data/federation/peer.json > /tmp/before.sha256
-
-python scripts/quickstart.py
-# Exit: 1 (topic not set — expected locally)
-
-shasum -a 256 .well-known/agent-federation.json .well-known/agent.json data/federation/peer.json > /tmp/after.sha256
-```
-
-**Descriptor `repo_id` after quickstart:** `agent-template-proof-node-01` (unchanged)  
-**Peer identity after quickstart:** unchanged  
-**Human guidance:** "create a PR to main — once merged, your node will be discoverable"  
-**No "push to main":** confirmed  
-
-Quickstart regenerates descriptor and agent card (expected — renderer output may differ from setup output in formatting). Identity values are semantically identical: same repo_id, same URLs, same display_name derivation.
-
----
-
-## 6. NADI Local — PASS
-
-### Read-only Diagnostic
-
-```bash
-# Before
-find data/federation -name "*.json" -exec shasum -a 256 {} \;
-
-python scripts/nadi_daemon.py --once
-# Exit: 0
-# Output: Node: agent-template-proof-node-01, Outbox: 1 pending
-
-# After
-find data/federation -name "*.json" -exec shasum -a 256 {} \;
-```
-
-- **No `.node_keys.json` created:** confirmed
-- **No file mutations:** confirmed
-- **No network/gh calls:** confirmed
-
-### Signed Send
-
-```bash
-python scripts/nadi_send.py send \
-  --to steward \
-  --op proof.external_acceptance \
-  --payload '{"proof":"gate-6","value":1}' \
-  --ttl-seconds 600
-# Exit: 0
-```
-
-**Message:**
-```json
-{
-  "id": "46f4ad71-...",
-  "source": "ag_0e5dbcaec5f95d57",
-  "target": "steward",
-  "operation": "proof.external_acceptance",
-  "payload": {"proof": "gate-6", "value": 1},
-  "payload_hash": "539b256ce82bb44a...",
-  "signature": "<present>",
-  "ttl_s": 600,
-  "priority": 5
-}
-```
-
-- **Path:** `data/federation/nadi_outbox.json` ✅
-- **No root-level `nadi_outbox.json`:** confirmed
-- **NadiTransport sees same message:** confirmed
-- **No legacy envelope fields:** confirmed
-
----
-
-## 7. Workflow — PENDING
-
-Requires FEDERATION_PAT and NODE_PRIVATE_KEY secrets.
-
----
-
-## 8. Final Reclone — PENDING
-
-After setup PR merge and workflow proofs.
-
----
-
-## 9. Acceptance Matrix
-
-| AT-REC | Status |
-|--------|--------|
-| AT-REC-001 through AT-REC-017 | **PASS** (code verified via Gates 1-5, offline proofs) |
-
-Live workflow relay pending secrets.
+| PR | Description |
+|----|-------------|
+| #17 | Display name from committed capabilities.json |
+| #18 | Core profile NADI test skip |
+| #19 | Defensive `_check_topic()` |
+| #20 | `.venv*` gitignore |
+| #21 | Ruff CI fixes |
