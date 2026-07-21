@@ -101,6 +101,7 @@ jobs:
         run: |
           python scripts/heartbeat_postcondition.py capture \
             --outbox data/federation/nadi_outbox.json \
+            --peer-json data/federation/peer.json \
             --output heartbeat-proof.json
 
       - name: Final NADI sync
