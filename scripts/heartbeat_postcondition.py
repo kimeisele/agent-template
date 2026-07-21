@@ -55,15 +55,30 @@ def cmd_capture(outbox_path: str, peer_json_path: str, output_path: str) -> int:
         print("error: outbox is empty", file=sys.stderr)
         return 1
 
-    # Cryptographic source from first message
-    message_source = raw[0].get("source", "")
-    if not message_source:
-        print("error: first message has no 'source' field", file=sys.stderr)
-        return 2
+    # Structural validation: every entry must be a dict with id/source/operation
+    for i, entry in enumerate(raw):
+        if not isinstance(entry, dict):
+            print(f"error: outbox entry {i} is not a JSON object",
+                  file=sys.stderr)
+            return 2
+        if not isinstance(entry.get("id"), str) or not entry["id"].strip():
+            print(f"error: outbox entry {i} missing valid 'id'",
+                  file=sys.stderr)
+            return 2
+        if not isinstance(entry.get("source"), str) or not entry["source"].strip():
+            print(f"error: outbox entry {i} missing valid 'source'",
+                  file=sys.stderr)
+            return 2
+        if not isinstance(entry.get("operation"), str) or not entry["operation"].strip():
+            print(f"error: outbox entry {i} missing valid 'operation'",
+                  file=sys.stderr)
+            return 2
 
-    # Validate: all messages share the same source
-    sources = {m.get("source") for m in raw
-               if isinstance(m, dict) and m.get("source")}
+    # Cryptographic source from first message (already validated)
+    message_source = raw[0]["source"]
+
+    # All messages must share the same source
+    sources = {m["source"] for m in raw}
     if len(sources) != 1:
         print(f"error: outbox contains messages from {len(sources)} "
               f"different sources", file=sys.stderr)
@@ -83,17 +98,20 @@ def cmd_capture(outbox_path: str, peer_json_path: str, output_path: str) -> int:
         print("error: peer.json is not a JSON object", file=sys.stderr)
         return 2
 
-    hub_agent_id = peer.get("identity", {}).get("city_id", "")
-    if not hub_agent_id or not isinstance(hub_agent_id, str):
-        print("error: peer.json missing identity.city_id", file=sys.stderr)
+    identity = peer.get("identity")
+    if not isinstance(identity, dict):
+        print("error: peer.json identity is not a JSON object", file=sys.stderr)
         return 2
 
-    # Filter heartbeat messages
+    hub_agent_id = identity.get("city_id")
+    if not isinstance(hub_agent_id, str) or not hub_agent_id.strip():
+        print("error: peer.json missing valid identity.city_id",
+              file=sys.stderr)
+        return 2
+
+    # Filter heartbeat messages (all entries already validated)
     heartbeat_msgs = [
-        m for m in raw
-        if isinstance(m, dict)
-        and m.get("operation") == "heartbeat"
-        and m.get("id")
+        m for m in raw if m["operation"] == "heartbeat"
     ]
     if not heartbeat_msgs:
         print("error: no heartbeat message found in outbox", file=sys.stderr)
@@ -102,9 +120,7 @@ def cmd_capture(outbox_path: str, peer_json_path: str, output_path: str) -> int:
     heartbeat_ids = [m["id"] for m in heartbeat_msgs]
     other_ids = [
         m["id"] for m in raw
-        if isinstance(m, dict) and m.get("id")
-        and m.get("operation") != "heartbeat"
-        and m.get("source") == message_source
+        if m["operation"] != "heartbeat"
     ]
 
     proof = {

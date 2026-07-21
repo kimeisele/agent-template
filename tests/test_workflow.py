@@ -847,3 +847,80 @@ class TestPostconditionAgentId:
         }))
         from heartbeat_postcondition import cmd_verify
         assert cmd_verify(str(proof)) != 0
+
+
+class TestCaptureValidation:
+    """Structural validation of outbox and peer.json."""
+
+    def _peer(self, tmp_path):
+        p = tmp_path / "peer.json"
+        p.write_text(json.dumps({"identity": {"city_id": "test-node"}}))
+        return p
+
+    def test_first_entry_not_object_fails(self, tmp_path):
+        outbox = tmp_path / "outbox.json"
+        outbox.write_text(json.dumps(["not_an_object"]))
+        from heartbeat_postcondition import cmd_capture
+        assert cmd_capture(str(outbox), str(self._peer(tmp_path)),
+                           str(tmp_path / "proof.json")) != 0
+
+    def test_identity_null_fails(self, tmp_path):
+        outbox = tmp_path / "outbox.json"
+        outbox.write_text(json.dumps([
+            {"id": "hb", "source": "ag_x", "operation": "heartbeat"},
+        ]))
+        peer = tmp_path / "peer.json"
+        peer.write_text(json.dumps({"identity": None}))
+        from heartbeat_postcondition import cmd_capture
+        assert cmd_capture(str(outbox), str(peer),
+                           str(tmp_path / "proof.json")) != 0
+
+    def test_identity_string_fails(self, tmp_path):
+        outbox = tmp_path / "outbox.json"
+        outbox.write_text(json.dumps([
+            {"id": "hb", "source": "ag_x", "operation": "heartbeat"},
+        ]))
+        peer = tmp_path / "peer.json"
+        peer.write_text(json.dumps({"identity": "not_an_object"}))
+        from heartbeat_postcondition import cmd_capture
+        assert cmd_capture(str(outbox), str(peer),
+                           str(tmp_path / "proof.json")) != 0
+
+    def test_missing_source_fails(self, tmp_path):
+        outbox = tmp_path / "outbox.json"
+        outbox.write_text(json.dumps([
+            {"id": "hb", "operation": "heartbeat"},  # no source
+        ]))
+        from heartbeat_postcondition import cmd_capture
+        assert cmd_capture(str(outbox), str(self._peer(tmp_path)),
+                           str(tmp_path / "proof.json")) != 0
+
+    def test_empty_id_fails(self, tmp_path):
+        outbox = tmp_path / "outbox.json"
+        outbox.write_text(json.dumps([
+            {"id": "", "source": "ag_x", "operation": "heartbeat"},
+        ]))
+        from heartbeat_postcondition import cmd_capture
+        assert cmd_capture(str(outbox), str(self._peer(tmp_path)),
+                           str(tmp_path / "proof.json")) != 0
+
+    def test_mixed_valid_and_sourceless_fails(self, tmp_path):
+        outbox = tmp_path / "outbox.json"
+        outbox.write_text(json.dumps([
+            {"id": "hb-1", "source": "ag_x", "operation": "heartbeat"},
+            {"id": "hb-2", "operation": "heartbeat"},  # no source
+        ]))
+        from heartbeat_postcondition import cmd_capture
+        assert cmd_capture(str(outbox), str(self._peer(tmp_path)),
+                           str(tmp_path / "proof.json")) != 0
+
+    def test_empty_city_id_fails(self, tmp_path):
+        outbox = tmp_path / "outbox.json"
+        outbox.write_text(json.dumps([
+            {"id": "hb", "source": "ag_x", "operation": "heartbeat"},
+        ]))
+        peer = tmp_path / "peer.json"
+        peer.write_text(json.dumps({"identity": {"city_id": "   "}}))
+        from heartbeat_postcondition import cmd_capture
+        assert cmd_capture(str(outbox), str(peer),
+                           str(tmp_path / "proof.json")) != 0
