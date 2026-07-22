@@ -1,7 +1,7 @@
 # Gate 6 — External Proof Node Acceptance
 
 > **Status:** PASS  
-> **Template:** `kimeisele/agent-template` @ `1e3d289` (post PR #22)  
+> **Template:** `kimeisele/agent-template` @ `1e3d289aff38ff4b9edefb7ddaba2631ad5280a1` (post PR #22)  
 > **Final Candidate:** `kimeisele/agent-template-acceptance-node-05`  
 > **Node main SHA:** `63b70c19d4786c5e83644c8d8d48e163f2faab9e`
 
@@ -18,7 +18,7 @@
 | `.venv*` gitignore | Present |
 | Inbox/outbox | Empty |
 | `.node_keys.json` | Not present |
-| Fresh reclone | `63b70c1` — 267 core, 280 federation, ruff clean |
+| Fresh reclone | `63b70c19d4786c5e83644c8d8d48e163f2faab9e` — 267 core, 280 federation, ruff clean |
 
 ## Live Proofs — PASS
 
@@ -43,7 +43,7 @@
 | Field | Value |
 |-------|-------|
 | **Run ID** | `29860023839` |
-| **Node SHA** | `63b70c19` |
+| **Node SHA** | `63b70c19d4786c5e83644c8d8d48e163f2faab9e` |
 | **Conclusion** | **SUCCESS** |
 | **Source** | `ag_ed8a1079acc8c9e6` |
 | **Hub agent ID** | `agent-template-acceptance-node-05` |
