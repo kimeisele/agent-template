@@ -21,3 +21,6 @@ build-backend = "setuptools.build_meta"
 
 [tool.setuptools]
 py-modules = ["head_agent"]
+
+[tool.setuptools.packages.find]
+include = ["agent_runtime*"]
