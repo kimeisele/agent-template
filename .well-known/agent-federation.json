@@ -1,7 +1,8 @@
 {
   "authority_feed_manifest_url": "https://raw.githubusercontent.com/kimeisele/agent-template/authority-feed/latest-authority-manifest.json",
   "capabilities": [
-    "authority-publishing"
+    "authority-publishing",
+    "faw-bounded-code-mutation"
   ],
   "display_name": "Agent Template",
   "endpoints": {
