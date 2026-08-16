@@ -26,4 +26,4 @@ py-modules = ["head_agent"]
 include = ["agent_runtime*"]
 
 [tool.setuptools.package-data]
-agent_runtime = ["allowlist.yaml"]
+agent_runtime = ["allowlist.json"]

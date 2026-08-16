@@ -1,0 +1,22 @@
+{
+  "allowed_targets": [
+    {
+      "repository": "kimeisele/faw-nadi-live-relay",
+      "paths": [
+        "nadi/"
+      ],
+      "branch_patterns": [
+        "faw/attempt/*"
+      ]
+    },
+    {
+      "repository": "kimeisele/federation-sandbox",
+      "paths": [
+        "."
+      ],
+      "branch_patterns": [
+        "faw/attempt/*"
+      ]
+    }
+  ]
+}

@@ -6,24 +6,17 @@ import pytest
 
 from agent_runtime.target_allowlist import TargetAllowlist
 
-FIXTURE = """\
-allowed_targets:
-  - repository: kimeisele/federation-sandbox
-    paths:
-      - "."
-    branch_patterns:
-      - "faw/attempt/*"
-  - repository: kimeisele/faw-nadi-live-relay
-    paths:
-      - "nadi/"
-    branch_patterns:
-      - "faw/attempt/*"
-"""
+FIXTURE = """{
+  "allowed_targets": [
+    {"repository": "kimeisele/federation-sandbox", "paths": ["."], "branch_patterns": ["faw/attempt/*"]},
+    {"repository": "kimeisele/faw-nadi-live-relay", "paths": ["nadi/"], "branch_patterns": ["faw/attempt/*"]}
+  ]
+}"""
 
 
 @pytest.fixture
 def allowlist(tmp_path: Path) -> TargetAllowlist:
-    p = tmp_path / "allowlist.yaml"
+    p = tmp_path / "allowlist.json"
     p.write_text(FIXTURE, encoding="utf-8")
     return TargetAllowlist.from_file(p)
 
@@ -76,8 +69,8 @@ def test_path_outside_allowance_rejected(allowlist: TargetAllowlist):
 
 
 def test_empty_allowlist_denies_everything(tmp_path: Path):
-    p = tmp_path / "empty.yaml"
-    p.write_text("allowed_targets: []\n", encoding="utf-8")
+    p = tmp_path / "empty.json"
+    p.write_text("{\"allowed_targets\": []}", encoding="utf-8")
     allowlist = TargetAllowlist.from_file(p)
     assert not allowlist.allows(
         repository="kimeisele/federation-sandbox",
@@ -87,7 +80,7 @@ def test_empty_allowlist_denies_everything(tmp_path: Path):
 
 
 def test_missing_allowlist_denies_everything(tmp_path: Path):
-    allowlist = TargetAllowlist.from_file(tmp_path / "does-not-exist.yaml")
+    allowlist = TargetAllowlist.from_file(tmp_path / "does-not-exist.json")
     assert not allowlist.allows(
         repository="kimeisele/federation-sandbox",
         path=".",
