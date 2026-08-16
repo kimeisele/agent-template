@@ -1,0 +1,26 @@
+# FAW runtime write-target allowlist (S8).
+#
+# Default-deny: the FAW runtime may write ONLY to repositories, paths, and
+# branch namespaces listed here. Anything not listed is rejected. A missing
+# or empty file denies everything (fail closed) — it never allows everything.
+#
+# Initial scope (Federation Bootstrap D1/D2): the dedicated relay transport
+# surface and the sandbox target repository. The runtime writes only
+# `faw/attempt/<attempt_id>` branches and never `main`.
+#
+# NOTE: both repositories are PUBLIC by necessity (branch protection on a
+# private repo requires GitHub Pro — see the program document §14). Never
+# place secrets, customer data, or anything confidential here; contents are
+# test artifacts.
+
+allowed_targets:
+  - repository: kimeisele/faw-nadi-live-relay
+    paths:
+      - "nadi/"
+    branch_patterns:
+      - "faw/attempt/*"
+  - repository: kimeisele/federation-sandbox
+    paths:
+      - "."
+    branch_patterns:
+      - "faw/attempt/*"
