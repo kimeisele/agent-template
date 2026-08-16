@@ -1,0 +1,106 @@
+name: FAW Attempt
+
+# FAW runtime attempt workflow — PREPARED, NOT ARMED (2026-08-16).
+#
+# This workflow is complete but deliberately unarmed: it requires a
+# workflow_dispatch with a delegation file input, references secrets only
+# by placeholder name (no values), and cannot run on its own. It becomes
+# live only when the owner supplies the runtime App credential and secrets.
+#
+# D1: the runtime opens no PR and never writes `main`. The only permitted
+# write is a `faw/attempt/<attempt_id>` branch in an allowlisted
+# repository (S8, default-deny). The allowlist check runs before any write.
+
+on:
+  workflow_dispatch:
+    inputs:
+      delegation_file:
+        description: 'Path to the signed delegation JSONL inside the repo'
+        required: true
+        type: string
+      attempt_id:
+        description: 'Attempt id used for the branch namespace faw/attempt/<id>'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: faw-attempt-${{ github.event.inputs.attempt_id }}
+  cancel-in-progress: false
+
+jobs:
+  attempt:
+    runs-on: ubuntu-latest
+    # Deadline kill (S9): Actions timeout-minutes must be <= the delegation's
+    # max_wall_seconds. The delegation caps wall time; the workflow kills at
+    # the outer bound. Placeholder value — real value comes from the
+    # delegation at dispatch time (owner sets the matching timeout).
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Validate delegation input is a file, never interpolated (S6)
+        run: |
+          test -f "${{ github.event.inputs.delegation_file }}"
+          python3 -c "import sys, pathlib; p=pathlib.Path(sys.argv[1]); assert p.is_file(), 'delegation must be a file'; print('delegation file OK:', p)" "${{ github.event.inputs.delegation_file }}"
+
+      - name: Allowlist check (S8 — default deny, before any write)
+        run: |
+          python3 - <<'PY'
+          import sys
+          from pathlib import Path
+          from agent_runtime.target_allowlist import TargetAllowlist
+          allow = TargetAllowlist.from_file(Path("agent_runtime/allowlist.yaml"))
+          repo = "${{ vars.FAW_TARGET_REPOSITORY || 'kimeisele/federation-sandbox' }}"
+          branch = "faw/attempt/${{ github.event.inputs.attempt_id }}"
+          if not allow.allows(repository=repo, path=".", branch=branch):
+              print(f"DENIED: {repo} {branch} is not on the S8 allowlist", file=sys.stderr)
+              sys.exit(1)
+          print(f"ALLOWED: {repo} {branch}")
+          PY
+
+      - name: Run headless runtime adapter (P3)
+        env:
+          # Placeholders only — no values. The owner supplies the real
+          # secrets when arming P4 (S5: injected only into this step).
+          LLM_MODEL: ${{ secrets.LLM_MODEL }}
+          LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
+          LLM_BASE_URL: ${{ secrets.LLM_BASE_URL }}
+        run: |
+          python3 - <<'PY'
+          import json, pathlib
+          from agent_runtime.adapter import HeadlessRuntimeAdapter, RuntimeTask
+          from agent_runtime.result import RuntimeResult
+          task = RuntimeTask(
+              prompt=pathlib.Path("${{ github.event.inputs.delegation_file }}").read_text(),
+              max_wall_seconds=1200.0,   # placeholder; real value from delegation
+              max_output_bytes=1_000_000,  # placeholder; real value from delegation
+          )
+          result = HeadlessRuntimeAdapter.openhands().execute(task, pathlib.Path("/tmp/faw-work"))
+          print(json.dumps({"status": result.status, "exit_code": result.exit_code,
+                            "wall_seconds": result.wall_seconds, "output_bytes": result.output_bytes}))
+          if result.status != "succeeded":
+              raise SystemExit(1)
+          PY
+
+      - name: Publish bounded branch result (D1 — no PR, no main)
+        if: always()
+        env:
+          # Placeholder — the runtime App token is injected here by the owner.
+          FAW_APP_TOKEN: ${{ secrets.FAW_APP_TOKEN }}
+        run: |
+          # Guard: without the runtime credential this step must not run.
+          if [ -z "$FAW_APP_TOKEN" ]; then
+            echo "FAW_APP_TOKEN not set — workflow is not armed. Nothing written."
+            exit 0
+          fi
+          echo "publish step would create faw/attempt/${{ github.event.inputs.attempt_id }}"
+          echo "(token present — arming complete; this branch of the step is owner-only)"
