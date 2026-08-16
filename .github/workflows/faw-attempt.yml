@@ -59,7 +59,7 @@ jobs:
           import sys
           from pathlib import Path
           from agent_runtime.target_allowlist import TargetAllowlist
-          allow = TargetAllowlist.from_file(Path("agent_runtime/allowlist.yaml"))
+          allow = TargetAllowlist.from_file(Path("agent_runtime/allowlist.json"))
           repo = "${{ vars.FAW_TARGET_REPOSITORY || 'kimeisele/federation-sandbox' }}"
           branch = "faw/attempt/${{ github.event.inputs.attempt_id }}"
           if not allow.allows(repository=repo, path=".", branch=branch):

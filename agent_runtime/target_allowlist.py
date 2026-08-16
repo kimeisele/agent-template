@@ -16,7 +16,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Mapping
 
-import yaml
+import json
 
 
 @dataclass(frozen=True)
@@ -41,9 +41,14 @@ class TargetAllowlist:
 
     @classmethod
     def from_file(cls, path: Path) -> "TargetAllowlist":
-        """Load from YAML. Missing/unreadable/malformed => empty (deny all)."""
+        """Load from JSON. Missing/unreadable/malformed => empty (deny all).
+
+        JSON (standard library) rather than YAML so the allowlist check runs
+        on a bare runner without any pip install (the runtime workflow has no
+        dependency installation step by design).
+        """
         try:
-            raw: Any = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+            raw: Any = json.loads(path.read_text(encoding="utf-8"))
             if not isinstance(raw, dict):
                 return cls()
             entries_raw = raw.get("allowed_targets")
@@ -66,7 +71,7 @@ class TargetAllowlist:
                     )
                 )
             return cls(entries)
-        except (OSError, yaml.YAMLError):
+        except (OSError, json.JSONDecodeError):
             # Fail closed: unreadable/malformed allowlist denies everything.
             return cls()
 
