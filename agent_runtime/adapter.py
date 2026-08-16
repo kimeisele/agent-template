@@ -11,6 +11,7 @@ import os
 import signal
 import subprocess
 import time
+from datetime import datetime, timezone
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Mapping, Sequence
@@ -63,6 +64,7 @@ class HeadlessRuntimeAdapter:
         env = os.environ.copy()
         env.update(self.environment)
         started = time.monotonic()
+        _started_dt = datetime.now(timezone.utc)
         process = subprocess.Popen(
             argv,
             cwd=workdir,
@@ -85,6 +87,7 @@ class HeadlessRuntimeAdapter:
                 os.killpg(process.pid, signal.SIGKILL)
                 stdout, stderr = process.communicate()
         elapsed = time.monotonic() - started
+        _finished_dt = datetime.now(timezone.utc)
 
         combined_size = len(stdout) + len(stderr)
         oversized = combined_size > task.max_output_bytes
@@ -95,29 +98,72 @@ class HeadlessRuntimeAdapter:
 
         if timed_out:
             return RuntimeResult(
-                "timed_out", process.returncode, elapsed, min(combined_size, task.max_output_bytes),
-                len(events), stdout_path, stderr_path,
+                status="timed_out",
+                started_at=_started_dt,
+                finished_at=_finished_dt,
+                artifacts=(),
+                usage={},
                 failure={"code": "runtime.deadline", "message": "runtime exceeded wall-clock limit"},
+                evidence=(),
+                exit_code=process.returncode,
+                wall_seconds=elapsed,
+                output_bytes=min(combined_size, task.max_output_bytes),
+                event_count=len(events),
+                stdout_path=stdout_path,
+                stderr_path=stderr_path,
             )
         if oversized:
             return RuntimeResult(
-                "failed", process.returncode, elapsed, task.max_output_bytes,
-                len(events), stdout_path, stderr_path,
+                status="failed",
+                started_at=_started_dt,
+                finished_at=_finished_dt,
                 failure={"code": "runtime.output_limit", "message": "runtime output exceeded byte limit"},
+                exit_code=process.returncode,
+                wall_seconds=elapsed,
+                output_bytes=task.max_output_bytes,
+                event_count=len(events),
+                stdout_path=stdout_path,
+                stderr_path=stderr_path,
             )
         if process.returncode != 0:
             return RuntimeResult(
-                "failed", process.returncode, elapsed, combined_size, len(events), stdout_path, stderr_path,
+                status="failed",
+                started_at=_started_dt,
+                finished_at=_finished_dt,
                 failure={"code": "runtime.exit", "message": f"runtime exited {process.returncode}"},
+                exit_code=process.returncode,
+                wall_seconds=elapsed,
+                output_bytes=combined_size,
+                event_count=len(events),
+                stdout_path=stdout_path,
+                stderr_path=stderr_path,
             )
         if parse_error is not None:
             return RuntimeResult(
-                "failed", process.returncode, elapsed, combined_size, len(events), stdout_path, stderr_path,
+                status="failed",
+                started_at=_started_dt,
+                finished_at=_finished_dt,
                 failure={"code": "runtime.invalid_jsonl", "message": parse_error},
+                exit_code=process.returncode,
+                wall_seconds=elapsed,
+                output_bytes=combined_size,
+                event_count=len(events),
+                stdout_path=stdout_path,
+                stderr_path=stderr_path,
             )
         return RuntimeResult(
-            "succeeded", process.returncode, elapsed, combined_size, len(events), stdout_path, stderr_path,
-            metadata={"terminal_event": events[-1] if events else None},
+            status="succeeded",
+            started_at=_started_dt,
+            finished_at=_finished_dt,
+            artifacts=(),
+            usage={},
+            evidence=({"event": events[-1]} if events else ()),
+            exit_code=process.returncode,
+            wall_seconds=elapsed,
+            output_bytes=combined_size,
+            event_count=len(events),
+            stdout_path=stdout_path,
+            stderr_path=stderr_path,
         )
 
     @staticmethod
