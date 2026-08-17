@@ -100,18 +100,29 @@ jobs:
               raise SystemExit(1)
           PY
 
+      - name: Obtain runtime App token (short-lived, on the fly)
+        id: app-token
+        if: always() && steps.allowlist.outcome == 'success'
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.FAW_APP_ID }}
+          private-key: ${{ secrets.FAW_APP_PRIVATE_KEY }}
+          repositories: >
+            faw-nadi-live-relay
+            federation-sandbox
+
       - name: Publish bounded branch result (D1 — no PR, no main)
         # Runs even if the runtime step was skipped (not armed), but only
         # after the allowlist check passed — a denied target never publishes.
-        if: always() && steps.allowlist.outcome == 'success'
+        if: always() && steps.allowlist.outcome == 'success' && steps.app-token.outcome == 'success'
         env:
-          # Placeholder — the runtime App token is injected here by the owner.
-          FAW_APP_TOKEN: ${{ secrets.FAW_APP_TOKEN }}
+          FAW_APP_TOKEN: ${{ steps.app-token.outputs.token }}
         run: |
-          # Guard: without the runtime credential this step must not run.
+          # Guard: without a usable App token this step must not write.
           if [ -z "$FAW_APP_TOKEN" ]; then
-            echo "FAW_APP_TOKEN not set — workflow is not armed. Nothing written."
+            echo "no App token — workflow is not armed. Nothing written."
             exit 0
           fi
           echo "publish step would create faw/attempt/${{ github.event.inputs.attempt_id }}"
-          echo "(token present — arming complete; this branch of the step is owner-only)"
+          echo "target repo: ${{ vars.FAW_TARGET_REPOSITORY || 'kimeisele/federation-sandbox' }}"
+          echo "(token obtained — arming complete; the actual branch push is owner-armed)"
