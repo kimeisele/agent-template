@@ -235,9 +235,9 @@ jobs:
       - name: "Verify terminal receipt (invariant: one delegation, one receipt)"
         if: always() && steps.allowlist.outcome == 'success' && steps.app-token.outcome == 'success'
         run: |
-          cd /tmp/sandbox-work
-          # Build the receipt from the adapter result shape (FAW contract fields)
-          # and check the branch was created with the bounded change only.
+          # Delegation lives in the agent-template checkout (GITHUB_WORKSPACE),
+          # not in /tmp/sandbox-work. Read it from the workspace.
+          cd "$GITHUB_WORKSPACE"
           python3 - <<'PY'
           import json, pathlib
           branch = "faw/attempt/${{ github.event.inputs.attempt_id }}"
