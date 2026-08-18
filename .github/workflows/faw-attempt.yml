@@ -113,13 +113,17 @@ jobs:
           case "$BASE" in
             *chat/completions) BASE="${BASE%/chat/completions}" ;;
           esac
+          # LLM_MODEL may carry the LiteLLM provider prefix (openai/<id>)
+          # which openhands needs, but the endpoint itself wants the bare id.
+          # Strip the prefix for the direct endpoint probe.
+          PROBE_MODEL="${LLM_MODEL##*/}"
           echo "probe endpoint: ${BASE}/chat/completions"
-          echo "probe model: $LLM_MODEL"
+          echo "probe model (bare, for the endpoint): $PROBE_MODEL"
           RESP="$(curl -s -w '\n%{http_code}' --max-time 30 -X POST \
             "${BASE}/chat/completions" \
             -H "Authorization: Bearer ${LLM_API_KEY}" \
             -H "Content-Type: application/json" \
-            -d "{\"model\": \"$LLM_MODEL\", \"messages\": [{\"role\": \"user\", \"content\": \"Say OK\"}]}")"
+            -d "{\"model\": \"$PROBE_MODEL\", \"messages\": [{\"role\": \"user\", \"content\": \"Say OK\"}]}")"
           CODE="$(echo "$RESP" | tail -1)"
           BODY="$(echo "$RESP" | sed '$d')"
           echo "HTTP status: $CODE"
@@ -127,26 +131,10 @@ jobs:
           echo "$BODY" | head -c 2000
           echo
           if [ "$CODE" != "200" ]; then
-            # Retry with the LiteLLM openai/ prefix — some endpoints accept
-            # the bare id, LiteLLM needs the provider prefix to route.
-            RESP2="$(curl -s -w '\n%{http_code}' --max-time 30 -X POST \
-              "${BASE}/chat/completions" \
-              -H "Authorization: Bearer ${LLM_API_KEY}" \
-              -H "Content-Type: application/json" \
-              -d "{\"model\": \"openai/$LLM_MODEL\", \"messages\": [{\"role\": \"user\", \"content\": \"Say OK\"}]}")"
-            CODE2="$(echo "$RESP2" | tail -1)"
-            BODY2="$(echo "$RESP2" | sed '$d')"
-            echo "retry with openai/ prefix — HTTP status: $CODE2"
-            echo "$BODY2" | head -c 2000
-            echo
-            if [ "$CODE2" = "200" ]; then
-              echo "openai/<model> works — set LLM_MODEL to openai/$LLM_MODEL in the secret."
-              exit 0
-            fi
-            echo "LLM probe failed (bare and openai/ prefixed) — the runtime cannot proceed."
+            echo "LLM probe failed — the runtime cannot proceed (openhands would hit the same endpoint)."
             exit 1
           fi
-          echo "LLM probe OK — provider reachable with bare model id."
+          echo "LLM probe OK — provider reachable."
       - name: Obtain runtime App token (short-lived, on the fly)
         id: app-token
         if: steps.allowlist.outcome == 'success'
