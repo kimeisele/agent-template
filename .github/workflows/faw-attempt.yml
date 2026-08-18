@@ -252,6 +252,7 @@ jobs:
           FAW_APP_TOKEN: ${{ steps.app-token.outputs.token }}
         run: |
           BRANCH="faw/attempt/${{ github.event.inputs.attempt_id }}"
+          REPO="${{ vars.FAW_TARGET_REPOSITORY || 'kimeisele/federation-sandbox' }}"
           cd /tmp/sandbox-work
           # Show what the runtime changed.
           echo "=== git status on $BRANCH ==="
@@ -276,21 +277,8 @@ jobs:
           fi
           # Attach the measurement record to the branch.
           if [ -f /tmp/faw-measurement.json ]; then
-            export CAL_CHANGED="$CHANGED" CAL_INS="$INS" CAL_DEL="$DEL" CAL_SOLVED="$SOLVED"
-            python3 - <<'MPY'
-            import json, os, pathlib
-            rec = json.loads(pathlib.Path("/tmp/faw-measurement.json").read_text())
-            rec["actions_minutes"] = 0.0
-            rec["diff_stats"] = {
-                "files_changed": int(os.environ.get("CAL_CHANGED", "0")),
-                "insertions": int(os.environ.get("CAL_INS", "0")),
-                "deletions": int(os.environ.get("CAL_DEL", "0")),
-            }
-            rec["task_solved"] = os.environ.get("CAL_SOLVED", "0") == "1"
-            out = pathlib.Path("calibration/runs/${{ github.event.inputs.attempt_id }}.json")
-            out.parent.mkdir(parents=True, exist_ok=True)
-            out.write_text(json.dumps(rec, indent=2))
-            MPY
+            export CAL_CHANGED="$CHANGED" CAL_INS="$INS" CAL_DEL="$DEL" CAL_SOLVED="$SOLVED" CAL_AID="${{ github.event.inputs.attempt_id }}"
+            python3 "$GITHUB_WORKSPACE/scripts/attach_measurement.py"
             git add calibration/runs/
           fi
           if [ "$CHANGED" = "0" ] && [ "$SOLVED" = "0" ]; then
@@ -300,7 +288,7 @@ jobs:
           echo "=== staged diff ==="
           git diff --cached --stat
           git commit -q -m "faw attempt ${{ github.event.inputs.attempt_id }} bounded change"
-          git push "https://x-access-token:${FAW_APP_TOKEN}@github.com/${{ vars.FAW_TARGET_REPOSITORY || 'kimeisele/federation-sandbox' }}.git" "HEAD:$BRANCH" 2>&1 || { echo "PUSH FAILED"; exit 1; }
+          git push "https://x-access-token:${FAW_APP_TOKEN}@github.com/${REPO}.git" "HEAD:$BRANCH" 2>&1 || { echo "PUSH FAILED"; exit 1; }
           echo "pushed $BRANCH (head $(git rev-parse --short HEAD))"
 
       - name: "Verify terminal receipt (invariant: one delegation, one receipt)"
