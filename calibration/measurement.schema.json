@@ -1,0 +1,88 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "calibration/measurement.schema.json",
+  "title": "FAW Calibration Measurement (PROGRAM 6b)",
+  "description": "One measurement record per FAW attempt, recorded after the run completes. The measurement series lives under calibration/runs/<attempt_id>.json. Per D5, cost/token claims are either measured or omitted — never asserted unverified.",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "attempt_id",
+    "run_id",
+    "started_at",
+    "finished_at",
+    "wall_seconds",
+    "actions_minutes",
+    "event_count",
+    "status",
+    "diff_stats"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "1.0"
+    },
+    "attempt_id": {
+      "type": "string",
+      "pattern": "^faw/attempt/[A-Za-z0-9._-]+$"
+    },
+    "run_id": {
+      "type": "string",
+      "description": "GitHub Actions run database id."
+    },
+    "started_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "finished_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "wall_seconds": {
+      "type": "number",
+      "minimum": 0,
+      "description": "Runtime wall-clock seconds (adapter measurement)."
+    },
+    "actions_minutes": {
+      "type": "number",
+      "minimum": 0,
+      "description": "Total GitHub Actions job minutes (job start to job end)."
+    },
+    "event_count": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "JSON events the runtime produced."
+    },
+    "status": {
+      "type": "string",
+      "enum": ["succeeded", "failed", "timed_out", "not_armed"]
+    },
+    "task_solved": {
+      "type": "boolean",
+      "description": "True only if the bounded change (the docstring) is present on the result branch. A green run without the change is NOT a success."
+    },
+    "diff_stats": {
+      "type": "object",
+      "required": ["files_changed", "insertions", "deletions"],
+      "properties": {
+        "files_changed": { "type": "integer", "minimum": 0 },
+        "insertions": { "type": "integer", "minimum": 0 },
+        "deletions": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "provider_usage": {
+      "type": ["object", "null"],
+      "description": "Provider-reported token/cost numbers IF the runtime exposes them. Omitted or null when not measurable (D5: never asserted unverified).",
+      "properties": {
+        "prompt_tokens": { "type": "integer", "minimum": 0 },
+        "completion_tokens": { "type": "integer", "minimum": 0 },
+        "cached_tokens": { "type": "integer", "minimum": 0 },
+        "total_tokens": { "type": "integer", "minimum": 0 },
+        "cost_usd": { "type": "number", "minimum": 0 }
+      }
+    },
+    "source": {
+      "type": "string",
+      "enum": ["workflow_measured", "provider_reported", "unknown"],
+      "description": "How the provider_usage numbers were obtained."
+    }
+  }
+}
