@@ -68,16 +68,22 @@ jobs:
           print(f"ALLOWED: {repo} {branch}")
           PY
 
+      - name: Setup Python 3.12 for the runtime venv
+        if: steps.allowlist.outcome == 'success'
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
       - name: Install headless runtime (openhands, Python 3.12)
         if: steps.allowlist.outcome == 'success'
         run: |
           # openhands requires Python 3.12 (program brief §2.5); the node
-          # code is 3.11. Install openhands into its own venv so the two
-          # Python floors do not collide.
-          python3 -m venv /opt/faw-runtime
+          # code is 3.11. Build the runtime venv with an explicit 3.12
+          # interpreter so the two Python floors do not collide.
+          python3.12 -m venv /opt/faw-runtime
           /opt/faw-runtime/bin/pip install --quiet openhands
-          /opt/faw-runtime/bin/openhands --version || true
-          echo "openhands installed at /opt/faw-runtime/bin/openhands"
+          test -x /opt/faw-runtime/bin/openhands && echo "openhands installed at /opt/faw-runtime/bin/openhands"
+          test -x /opt/faw-runtime/bin/openhands || { echo "openhands binary missing after install" >&2; ls /opt/faw-runtime/bin | head; exit 1; }
 
       - name: Run headless runtime adapter (P3)
         env:
