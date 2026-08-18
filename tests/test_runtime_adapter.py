@@ -64,3 +64,18 @@ def test_invalid_jsonl_fails_closed(tmp_path):
     )
     assert result.status == "failed"
     assert result.failure["code"] == "runtime.invalid_jsonl"
+
+
+def test_diagnostic_line_before_jsonl_is_skipped(tmp_path):
+    # openhands prints a Rich terminal warning before the JSONL stream;
+    # the adapter must skip it, not fail the run.
+    stub = _stub(
+        tmp_path,
+        "print('OpenHands CLI terminal UI may not work correctly in this environment: Rich ...')\n"
+        "print('{\"action\": \"run\", \"observation\": \"ok\"}')\n",
+    )
+    result = HeadlessRuntimeAdapter((sys.executable, str(stub))).execute(
+        RuntimeTask("task", 5, 4096), tmp_path / "work"
+    )
+    assert result.status == "succeeded"
+    assert result.event_count == 1

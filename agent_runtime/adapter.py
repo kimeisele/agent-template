@@ -180,15 +180,26 @@ class HeadlessRuntimeAdapter:
 
     @staticmethod
     def _parse_jsonl(raw: bytes) -> tuple[list[dict], str | None]:
+        """Parse JSONL, skipping non-JSON diagnostic lines.
+
+        openhands prints warnings (e.g. the Rich terminal-UI notice) to stdout
+        before the actual JSONL event stream. Those lines are not events; we
+        skip them rather than failing the whole run. A stream with no JSON
+        objects at all still fails closed.
+        """
         events = []
+        saw_json = False
         for index, line in enumerate(raw.splitlines(), start=1):
             if not line.strip():
                 continue
             try:
                 event = json.loads(line)
-            except (json.JSONDecodeError, UnicodeDecodeError) as exc:
-                return events, f"invalid JSONL at line {index}: {exc}"
+            except (json.JSONDecodeError, UnicodeDecodeError):
+                continue  # diagnostic line before/among events: skip
             if not isinstance(event, dict):
-                return events, f"JSONL line {index} is not an object"
+                continue
             events.append(event)
+            saw_json = True
+        if not saw_json:
+            return [], "no JSON events found in runtime output"
         return events, None
