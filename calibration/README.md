@@ -12,6 +12,12 @@ against `calibration/measurement.schema.json`.
   reports wall seconds and output bytes only; provider token/cost numbers
   are included **only** if the runtime events expose them, and are marked
   `source` accordingly. Never asserted unverified.
+- **Token measurement: [UNBEKANNT — not available from the runtime path.]**
+  openhands' MessageEvent payloads carry an empty `usage` object; the token
+  numbers seen in the workflow log come from the LLM probe (a direct curl to
+  the OpenAI-compatible endpoint), not from openhands' events. So
+  `provider_usage` stays `null` with `source: "unknown"`. Provider-side token
+  accounting for per-attempt attribution is an open item (PROGRAM 6b).
 - **A green run without the bounded change is NOT a success.** `task_solved`
   is false unless the docstring is present on the result branch.
 - Branches `faw/attempt/<id>` are kept as evidence. Cleanup command:
