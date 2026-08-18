@@ -300,7 +300,7 @@ jobs:
           echo "=== staged diff ==="
           git diff --cached --stat
           git commit -q -m "faw attempt ${{ github.event.inputs.attempt_id }} bounded change"
-          git push -q "https://x-access-token:${FAW_APP_TOKEN}@github.com/${{ vars.FAW_TARGET_REPOSITORY || 'kimeisele/federation-sandbox' }}.git" "HEAD:$BRANCH"
+          git push "https://x-access-token:${FAW_APP_TOKEN}@github.com/${{ vars.FAW_TARGET_REPOSITORY || 'kimeisele/federation-sandbox' }}.git" "HEAD:$BRANCH" 2>&1 || { echo "PUSH FAILED"; exit 1; }
           echo "pushed $BRANCH (head $(git rev-parse --short HEAD))"
 
       - name: "Verify terminal receipt (invariant: one delegation, one receipt)"
