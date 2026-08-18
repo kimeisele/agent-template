@@ -210,6 +210,15 @@ jobs:
               raise SystemExit(1)
           PY
 
+      - name: Show runtime events (diagnose what openhands did)
+        if: always() && steps.allowlist.outcome == 'success'
+        run: |
+          echo "=== runtime.stdout.jsonl (events) ==="
+          head -c 4000 /tmp/sandbox-work/runtime.stdout.jsonl 2>/dev/null || echo "(missing)"
+          echo
+          echo "=== runtime.stderr.log (last 30 lines) ==="
+          tail -30 /tmp/sandbox-work/runtime.stderr.log 2>/dev/null || echo "(missing)"
+
       - name: Publish bounded branch result (D1 — no PR, no main)
         if: always() && steps.allowlist.outcome == 'success' && steps.app-token.outcome == 'success'
         env:
