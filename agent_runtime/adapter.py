@@ -101,6 +101,12 @@ class HeadlessRuntimeAdapter:
         remaining = max(0, task.max_output_bytes - min(len(stdout), task.max_output_bytes))
         stderr_path.write_bytes(stderr[:remaining])
         events, parse_error = self._parse_jsonl(stdout)
+        # openhands prints an ASCII banner and some diagnostics to stderr
+        # before the JSONL event stream; when stdout is not JSONL but stderr
+        # carries real bytes (a provider error or a relocated stream), parse
+        # stderr instead. An empty stderr still fails closed (no events).
+        if parse_error is not None and stderr.strip():
+            events, parse_error = self._parse_jsonl(stderr)
 
         if timed_out:
             return RuntimeResult(
