@@ -93,6 +93,61 @@ jobs:
           test -x /opt/faw-runtime/bin/openhands && echo "openhands installed at /opt/faw-runtime/bin/openhands"
           test -x /opt/faw-runtime/bin/openhands || { echo "openhands binary missing after install" >&2; ls /opt/faw-runtime/bin | head; exit 1; }
 
+      - name: LLM endpoint probe (diagnose the provider, key stays masked)
+        if: steps.allowlist.outcome == 'success'
+        env:
+          LLM_MODEL: ${{ secrets.LLM_MODEL }}
+          LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
+          LLM_BASE_URL: ${{ secrets.LLM_BASE_URL }}
+        run: |
+          # Diagnose the provider before openhands: a minimal chat/completions
+          # call with the real secrets. GitHub masks the key in the log
+          # automatically. This surfaces the actual HTTP status + body so a
+          # silent openhands exit-0 is traceable to the endpoint response.
+          if [ -z "$LLM_API_KEY" ]; then
+            echo "LLM_API_KEY not set — probe skipped (not armed)."
+            exit 0
+          fi
+          # Normalize base URL: strip a trailing /chat/completions if present.
+          BASE="${LLM_BASE_URL%/}"
+          case "$BASE" in
+            *chat/completions) BASE="${BASE%/chat/completions}" ;;
+          esac
+          echo "probe endpoint: ${BASE}/chat/completions"
+          echo "probe model: $LLM_MODEL"
+          RESP="$(curl -s -w '\n%{http_code}' --max-time 30 -X POST \
+            "${BASE}/chat/completions" \
+            -H "Authorization: Bearer ${LLM_API_KEY}" \
+            -H "Content-Type: application/json" \
+            -d "{\"model\": \"$LLM_MODEL\", \"messages\": [{\"role\": \"user\", \"content\": \"Say OK\"}]}")"
+          CODE="$(echo "$RESP" | tail -1)"
+          BODY="$(echo "$RESP" | sed '$d')"
+          echo "HTTP status: $CODE"
+          echo "Response body (key masked by GitHub):"
+          echo "$BODY" | head -c 2000
+          echo
+          if [ "$CODE" != "200" ]; then
+            # Retry with the LiteLLM openai/ prefix — some endpoints accept
+            # the bare id, LiteLLM needs the provider prefix to route.
+            RESP2="$(curl -s -w '\n%{http_code}' --max-time 30 -X POST \
+              "${BASE}/chat/completions" \
+              -H "Authorization: Bearer ${LLM_API_KEY}" \
+              -H "Content-Type: application/json" \
+              -d "{\"model\": \"openai/$LLM_MODEL\", \"messages\": [{\"role\": \"user\", \"content\": \"Say OK\"}]}")"
+            CODE2="$(echo "$RESP2" | tail -1)"
+            BODY2="$(echo "$RESP2" | sed '$d')"
+            echo "retry with openai/ prefix — HTTP status: $CODE2"
+            echo "$BODY2" | head -c 2000
+            echo
+            if [ "$CODE2" = "200" ]; then
+              echo "openai/<model> works — set LLM_MODEL to openai/$LLM_MODEL in the secret."
+              exit 0
+            fi
+            echo "LLM probe failed (bare and openai/ prefixed) — the runtime cannot proceed."
+            exit 1
+          fi
+          echo "LLM probe OK — provider reachable with bare model id."
+
       - name: Run headless runtime adapter (P3)
         env:
           # Placeholders only — no values. The owner supplies the real
@@ -101,6 +156,11 @@ jobs:
           LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
           LLM_BASE_URL: ${{ secrets.LLM_BASE_URL }}
           FAW_RUNTIME_EXECUTABLE: /opt/faw-runtime/bin/openhands
+          # Loud failure mode: openhands swallows provider errors into exit 0
+          # and empty stderr. Raise logging so the LLM error is visible, and
+          # hide the ASCII banner from stdout (it is not JSONL).
+          LOG_LEVEL: DEBUG
+          OPENHANDS_SUPPRESS_BANNER: "1"
         run: |
           # Not armed: without the LLM credential the runtime cannot run.
           # End as a clear no-op so a dry run exercises every other step and
