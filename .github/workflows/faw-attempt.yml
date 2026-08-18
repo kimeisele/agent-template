@@ -181,6 +181,24 @@ jobs:
               max_output_bytes=1_000_000,
           )
           result = HeadlessRuntimeAdapter.openhands().execute(task, pathlib.Path("/tmp/sandbox-work"))
+          # Extract provider token usage from the LLM events (openhands puts
+          # usage in the MessageEvent payloads). Sum across events.
+          usage_total = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0, "cached_tokens": 0}
+          if pathlib.Path("/tmp/sandbox-work/runtime.stdout.jsonl").is_file():
+              for line in pathlib.Path("/tmp/sandbox-work/runtime.stdout.jsonl").read_text(errors="replace").splitlines():
+                  try:
+                      ev = json.loads(line)
+                  except Exception:
+                      continue
+                  msg = ev.get("llm_message") or ev.get("message") or {}
+                  if isinstance(msg, dict):
+                      u = msg.get("usage") or {}
+                      for k in ("prompt_tokens", "completion_tokens", "total_tokens"):
+                          if isinstance(u.get(k), int):
+                              usage_total[k] += u.get(k, 0)
+                      det = u.get("prompt_tokens_details") or {}
+                      if isinstance(det.get("cached_tokens"), int):
+                          usage_total["cached_tokens"] += det.get("cached_tokens", 0)
           print(json.dumps({
               "status": result.status,
               "exit_code": result.exit_code,
@@ -188,7 +206,28 @@ jobs:
               "output_bytes": result.output_bytes,
               "event_count": result.event_count,
               "failure": result.failure,
+              "provider_usage": usage_total,
           }))
+          # Persist the measurement record for the calibration series.
+          import os, datetime
+          rec = {
+              "schema_version": "1.0",
+              "attempt_id": "faw/attempt/${{ github.event.inputs.attempt_id }}",
+              "run_id": os.environ.get("GITHUB_RUN_ID", "?"),
+              "started_at": result.started_at.isoformat() if result.started_at else None,
+              "finished_at": result.finished_at.isoformat() if result.finished_at else None,
+              "wall_seconds": result.wall_seconds,
+              "actions_minutes": 0,
+              "event_count": result.event_count,
+              "status": result.status,
+              "task_solved": False,
+              "diff_stats": {"files_changed": 0, "insertions": 0, "deletions": 0},
+              "provider_usage": usage_total if any(usage_total.values()) else None,
+              "source": "provider_reported" if any(usage_total.values()) else "unknown",
+          }
+          out = pathlib.Path("/tmp/faw-measurement.json")
+          out.write_text(json.dumps(rec, indent=2))
+          print("measurement written to /tmp/faw-measurement.json")
           if result.status != "succeeded":
               for p_ in ("/tmp/sandbox-work/runtime.stdout.jsonl", "/tmp/sandbox-work/runtime.stderr.log"):
                   fp = pathlib.Path(p_)
@@ -225,12 +264,35 @@ jobs:
           git add -A -- ':!runtime.stdout.jsonl' ':!runtime.stderr.log' ':!task.md'
           git status --short
           CHANGED="$(git diff --cached --name-only | wc -l | tr -d ' ')"
-          if [ "$CHANGED" = "0" ]; then
+          # The docstring change is the acceptance criterion: x.py must have
+          # a docstring added to f. Count the diff.
+          INS="$(git diff --cached --numstat | awk '{s+=$1} END {print s+0}')"
+          DEL="$(git diff --cached --numstat | awk '{s+=$2} END {print s+0}')"
+          echo "staged insertions=$INS deletions=$DEL"
+          # task_solved: the change must be a real source edit (docstring).
+          SOLVED=0
+          if [ "$CHANGED" != "0" ] && [ "$INS" -gt 0 ]; then
+            SOLVED=1
+          fi
+          # Attach the measurement record to the branch.
+          if [ -f /tmp/faw-measurement.json ]; then
+            python3 - <<'MPY'
+            import json, pathlib
+            rec = json.loads(pathlib.Path("/tmp/faw-measurement.json").read_text())
+            rec["actions_minutes"] = 0.0
+            rec["diff_stats"] = {"files_changed": int("$CHANGED"), "insertions": int("$INS"), "deletions": int("$DEL")}
+            rec["task_solved"] = bool("$SOLVED")
+            pathlib.Path("calibration/runs/${{ github.event.inputs.attempt_id }}.json").parent.mkdir(parents=True, exist_ok=True)
+            pathlib.Path("calibration/runs/${{ github.event.inputs.attempt_id }}.json").write_text(json.dumps(rec, indent=2))
+            MPY
+            git add calibration/runs/
+          fi
+          if [ "$CHANGED" = "0" ] && [ "$SOLVED" = "0" ]; then
             echo "NO SOURCE CHANGES — the runtime did not touch the repository files. NOT a success."
             exit 1
           fi
           echo "=== staged diff ==="
-          git diff --cached
+          git diff --cached --stat
           git commit -q -m "faw attempt ${{ github.event.inputs.attempt_id }} bounded change"
           git push -q "https://x-access-token:${FAW_APP_TOKEN}@github.com/${{ vars.FAW_TARGET_REPOSITORY || 'kimeisele/federation-sandbox' }}.git" "HEAD:$BRANCH"
           echo "pushed $BRANCH (head $(git rev-parse --short HEAD))"
