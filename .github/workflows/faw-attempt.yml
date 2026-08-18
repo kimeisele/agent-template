@@ -68,6 +68,17 @@ jobs:
           print(f"ALLOWED: {repo} {branch}")
           PY
 
+      - name: Install headless runtime (openhands, Python 3.12)
+        if: steps.allowlist.outcome == 'success'
+        run: |
+          # openhands requires Python 3.12 (program brief §2.5); the node
+          # code is 3.11. Install openhands into its own venv so the two
+          # Python floors do not collide.
+          python3 -m venv /opt/faw-runtime
+          /opt/faw-runtime/bin/pip install --quiet openhands
+          /opt/faw-runtime/bin/openhands --version || true
+          echo "openhands installed at /opt/faw-runtime/bin/openhands"
+
       - name: Run headless runtime adapter (P3)
         env:
           # Placeholders only — no values. The owner supplies the real
@@ -100,17 +111,6 @@ jobs:
           if result.status != "succeeded":
               raise SystemExit(1)
           PY
-
-      - name: Install headless runtime (openhands, Python 3.12)
-        if: steps.allowlist.outcome == 'success'
-        run: |
-          # openhands requires Python 3.12 (program brief §2.5); the node
-          # code is 3.11. Install openhands into its own venv so the two
-          # Python floors do not collide.
-          python3 -m venv /opt/faw-runtime
-          /opt/faw-runtime/bin/pip install --quiet openhands
-          /opt/faw-runtime/bin/openhands --version || true
-          echo "openhands installed at /opt/faw-runtime/bin/openhands"
 
       - name: Obtain runtime App token (short-lived, on the fly)
         id: app-token
