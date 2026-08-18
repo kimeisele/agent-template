@@ -30,6 +30,10 @@
       "description": "Authority Publishing capability.",
       "id": "authority-publishing",
       "name": "Authority Publishing"
+    },
+    {
+      "id": "faw-bounded-code-mutation",
+      "name": "FAW Bounded Code Mutation"
     }
   ],
   "url": "https://github.com/kimeisele/agent-template",
