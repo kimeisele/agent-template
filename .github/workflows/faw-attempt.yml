@@ -276,14 +276,20 @@ jobs:
           fi
           # Attach the measurement record to the branch.
           if [ -f /tmp/faw-measurement.json ]; then
+            export CAL_CHANGED="$CHANGED" CAL_INS="$INS" CAL_DEL="$DEL" CAL_SOLVED="$SOLVED"
             python3 - <<'MPY'
-            import json, pathlib
+            import json, os, pathlib
             rec = json.loads(pathlib.Path("/tmp/faw-measurement.json").read_text())
             rec["actions_minutes"] = 0.0
-            rec["diff_stats"] = {"files_changed": int("$CHANGED"), "insertions": int("$INS"), "deletions": int("$DEL")}
-            rec["task_solved"] = bool("$SOLVED")
-            pathlib.Path("calibration/runs/${{ github.event.inputs.attempt_id }}.json").parent.mkdir(parents=True, exist_ok=True)
-            pathlib.Path("calibration/runs/${{ github.event.inputs.attempt_id }}.json").write_text(json.dumps(rec, indent=2))
+            rec["diff_stats"] = {
+                "files_changed": int(os.environ.get("CAL_CHANGED", "0")),
+                "insertions": int(os.environ.get("CAL_INS", "0")),
+                "deletions": int(os.environ.get("CAL_DEL", "0")),
+            }
+            rec["task_solved"] = os.environ.get("CAL_SOLVED", "0") == "1"
+            out = pathlib.Path("calibration/runs/${{ github.event.inputs.attempt_id }}.json")
+            out.parent.mkdir(parents=True, exist_ok=True)
+            out.write_text(json.dumps(rec, indent=2))
             MPY
             git add calibration/runs/
           fi
