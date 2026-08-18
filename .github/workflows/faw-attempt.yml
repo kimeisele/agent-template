@@ -120,8 +120,14 @@ jobs:
               max_output_bytes=1_000_000,  # placeholder; real value from delegation
           )
           result = HeadlessRuntimeAdapter.openhands().execute(task, pathlib.Path("/tmp/faw-work"))
-          print(json.dumps({"status": result.status, "exit_code": result.exit_code,
-                            "wall_seconds": result.wall_seconds, "output_bytes": result.output_bytes}))
+          print(json.dumps({
+              "status": result.status,
+              "exit_code": result.exit_code,
+              "wall_seconds": result.wall_seconds,
+              "output_bytes": result.output_bytes,
+              "event_count": result.event_count,
+              "failure": result.failure,
+          }))
           if result.status != "succeeded":
               raise SystemExit(1)
           PY
