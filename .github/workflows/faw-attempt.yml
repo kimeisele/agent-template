@@ -75,6 +75,7 @@ jobs:
           LLM_MODEL: ${{ secrets.LLM_MODEL }}
           LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
           LLM_BASE_URL: ${{ secrets.LLM_BASE_URL }}
+          FAW_RUNTIME_EXECUTABLE: /opt/faw-runtime/bin/openhands
         run: |
           # Not armed: without the LLM credential the runtime cannot run.
           # End as a clear no-op so a dry run exercises every other step and
@@ -100,6 +101,17 @@ jobs:
               raise SystemExit(1)
           PY
 
+      - name: Install headless runtime (openhands, Python 3.12)
+        if: steps.allowlist.outcome == 'success'
+        run: |
+          # openhands requires Python 3.12 (program brief §2.5); the node
+          # code is 3.11. Install openhands into its own venv so the two
+          # Python floors do not collide.
+          python3 -m venv /opt/faw-runtime
+          /opt/faw-runtime/bin/pip install --quiet openhands
+          /opt/faw-runtime/bin/openhands --version || true
+          echo "openhands installed at /opt/faw-runtime/bin/openhands"
+
       - name: Obtain runtime App token (short-lived, on the fly)
         id: app-token
         if: always() && steps.allowlist.outcome == 'success'
@@ -107,9 +119,7 @@ jobs:
         with:
           app-id: ${{ secrets.FAW_APP_ID }}
           private-key: ${{ secrets.FAW_APP_PRIVATE_KEY }}
-          repositories: >
-            faw-nadi-live-relay
-            federation-sandbox
+          repositories: "faw-nadi-live-relay,federation-sandbox"
 
       - name: Publish bounded branch result (D1 — no PR, no main)
         # Runs even if the runtime step was skipped (not armed), but only

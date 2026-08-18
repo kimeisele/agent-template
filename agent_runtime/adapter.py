@@ -44,8 +44,14 @@ class HeadlessRuntimeAdapter:
 
     @classmethod
     def openhands(cls, *, environment: Mapping[str, str] | None = None) -> "HeadlessRuntimeAdapter":
-        """Current candidate; kept behind the generic process boundary."""
-        return cls(("openhands", "--headless", "--json"), environment=environment)
+        """Current candidate; kept behind the generic process boundary.
+
+        Honors FAW_RUNTIME_EXECUTABLE (absolute path to the runtime binary,
+        e.g. a Python 3.12 venv) so the node code (3.11) never needs the
+        runtime's Python on PATH. Falls back to ``openhands`` on PATH.
+        """
+        executable = os.environ.get("FAW_RUNTIME_EXECUTABLE", "openhands")
+        return cls((executable, "--headless", "--json"), environment=environment)
 
     def execute(self, task: RuntimeTask, workdir: Path) -> RuntimeResult:
         if task.max_wall_seconds <= 0:
