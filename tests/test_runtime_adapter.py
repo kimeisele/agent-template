@@ -79,3 +79,12 @@ def test_diagnostic_line_before_jsonl_is_skipped(tmp_path):
     )
     assert result.status == "succeeded"
     assert result.event_count == 1
+
+
+def test_openhands_includes_override_with_envs():
+    # Without --override-with-envs, openhands ignores LLM env vars and exits
+    # "Headless mode requires existing settings" with no events.
+    adapter = HeadlessRuntimeAdapter.openhands()
+    assert "--override-with-envs" in adapter.executable
+    assert "--headless" in adapter.executable
+    assert "--json" in adapter.executable

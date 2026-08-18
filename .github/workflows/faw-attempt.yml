@@ -222,12 +222,18 @@ jobs:
           git status --short
           echo "=== diff vs base ==="
           git diff --stat
-          CHANGED="$(git status --short | wc -l | tr -d ' ')"
+          # Only real source changes count: exclude runtime artifacts and
+          # the task file. A green run that only produced artifacts is NOT a
+          # success (P4 acceptance: the delegation's task must be done).
+          git add -A -- ':!runtime.stdout.jsonl' ':!runtime.stderr.log' ':!task.md'
+          git status --short
+          CHANGED="$(git diff --cached --name-only | wc -l | tr -d ' ')"
           if [ "$CHANGED" = "0" ]; then
-            echo "NO CHANGES — the runtime did not touch any file. This is NOT a success."
+            echo "NO SOURCE CHANGES — the runtime did not touch the repository files. NOT a success."
             exit 1
           fi
-          git add -A
+          echo "=== staged diff ==="
+          git diff --cached
           git commit -q -m "faw attempt ${{ github.event.inputs.attempt_id }} bounded change"
           git push -q "https://x-access-token:${FAW_APP_TOKEN}@github.com/${{ vars.FAW_TARGET_REPOSITORY || 'kimeisele/federation-sandbox' }}.git" "HEAD:$BRANCH"
           echo "pushed $BRANCH (head $(git rev-parse --short HEAD))"
