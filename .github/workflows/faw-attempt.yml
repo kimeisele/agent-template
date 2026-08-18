@@ -129,6 +129,13 @@ jobs:
               "failure": result.failure,
           }))
           if result.status != "succeeded":
+              # Surface the raw runtime output for diagnosis (P3).
+              import pathlib
+              for p_ in ("/tmp/faw-work/runtime.stdout.jsonl", "/tmp/faw-work/runtime.stderr.log"):
+                  fp = pathlib.Path(p_)
+                  if fp.is_file():
+                      print(f"--- {p_} (first 800 bytes) ---")
+                      print(fp.read_text(errors="replace")[:800])
               raise SystemExit(1)
           PY
 
