@@ -51,7 +51,13 @@ class HeadlessRuntimeAdapter:
         runtime's Python on PATH. Falls back to ``openhands`` on PATH.
         """
         executable = os.environ.get("FAW_RUNTIME_EXECUTABLE", "openhands")
-        return cls((executable, "--headless", "--json"), environment=environment)
+        # --override-with-envs is REQUIRED: without it openhands ignores
+        # LLM_API_KEY/LLM_BASE_URL/LLM_MODEL and exits "Headless mode
+        # requires existing settings" with exit 0 and no events.
+        return cls(
+            (executable, "--headless", "--json", "--override-with-envs"),
+            environment=environment,
+        )
 
     def execute(self, task: RuntimeTask, workdir: Path) -> RuntimeResult:
         if task.max_wall_seconds <= 0:
