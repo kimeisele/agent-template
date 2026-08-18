@@ -74,14 +74,22 @@ jobs:
         with:
           python-version: '3.12'
 
-      - name: Install headless runtime (openhands, Python 3.12)
+      - name: Install headless runtime (openhands 1.16.0, Python 3.12, via uv)
         if: steps.allowlist.outcome == 'success'
         run: |
           # openhands requires Python 3.12 (program brief §2.5); the node
           # code is 3.11. Build the runtime venv with an explicit 3.12
           # interpreter so the two Python floors do not collide.
+          #
+          # Install with uv, not pip: pip's resolver cannot satisfy
+          # openhands 1.16.0's lmnr/openhands-sdk dependency constraints
+          # (ResolutionImpossible); uv resolves them cleanly (verified
+          # 2026-08-18: openhands==1.16.0 installs and runs in a 3.12 venv).
           python3.12 -m venv /opt/faw-runtime
-          /opt/faw-runtime/bin/pip install --quiet openhands
+          pip install --quiet uv
+          # uv pip install against the 3.12 venv (uv resolves the dependency
+          # set that pip cannot).
+          uv pip install --python /opt/faw-runtime/bin/python "openhands==1.16.0"
           test -x /opt/faw-runtime/bin/openhands && echo "openhands installed at /opt/faw-runtime/bin/openhands"
           test -x /opt/faw-runtime/bin/openhands || { echo "openhands binary missing after install" >&2; ls /opt/faw-runtime/bin | head; exit 1; }
 
