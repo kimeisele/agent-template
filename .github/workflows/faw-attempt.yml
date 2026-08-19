@@ -304,34 +304,14 @@ jobs:
           git push "https://x-access-token:${FAW_APP_TOKEN}@github.com/${REPO}.git" "HEAD:$BRANCH" 2>&1 || { echo "PUSH FAILED"; exit 1; }
           echo "pushed $BRANCH (head $(git rev-parse --short HEAD))"
 
-      - name: "Verify terminal receipt (invariant: one delegation, one receipt)"
+      - name: "Sign and verify terminal receipt (FAW round-trip, P6)"
         if: always() && steps.allowlist.outcome == 'success' && steps.app-token.outcome == 'success'
         run: |
-          # Delegation lives in the agent-template checkout (GITHUB_WORKSPACE),
-          # not in /tmp/sandbox-work. Read it from the workspace.
-          cd "$GITHUB_WORKSPACE"
-          python3 - <<'PY'
-          import json, pathlib
-          branch = "faw/attempt/${{ github.event.inputs.attempt_id }}"
-          head = "${{ github.sha }}"
-          delegation = json.loads(
-              pathlib.Path("${{ github.event.inputs.delegation_file }}").read_text()
-          )
-          receipt = {
-              "kind": "federation_agent_web_terminal_receipt",
-              "attempt_id": "${{ github.event.inputs.attempt_id }}",
-              "task_id": delegation.get("task_id", "task-x"),
-              "branch": branch,
-              "branch_head": head,
-              "status": "succeeded",
-              "artifacts": [],
-              "evidence": [{"branch": branch, "head": head}],
-              "usage": {},
-          }
-          print(json.dumps(receipt, indent=2))
-          # The invariant is structural here: the branch exists and carries
-          # the change; FAW's signed receipt construction/verification is
-          # covered by the FAW test suite (receipt_from_result +
-          # accept_terminal). A full signed receipt round-trip inside this
-          # workflow is the PROGRAM 6 acceptance, not P4.
-          PY
+          # Real signed receipt: ephemeral issuer+executor nodes, a signed
+          # delegation, receipt_from_result (bound to the delegation digest),
+          # and accept_terminal + verify — exactly one terminal receipt.
+          python3 -m pip install --quiet git+https://github.com/kimeisele/federated-agent-web.git
+          export FAW_ATTEMPT_ID="${{ github.event.inputs.attempt_id }}"
+          export FAW_RESULT_STATUS="succeeded"
+          export FAW_RUN_DIR="/tmp/faw-receipt"
+          python3 "$GITHUB_WORKSPACE/scripts/sign_receipt.py"
