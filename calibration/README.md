@@ -31,4 +31,20 @@ gh api -X DELETE repos/kimeisele/federation-sandbox/git/refs/heads/faw/attempt/<
 
 | attempt_id | run_id | wall_seconds | events | status | task_solved | notes |
 |---|---|---|---|---|---|---|
-| _(to fill after runs)_ | | | | | | |
+| live-1 | 32216381919 | 59.4 | 13 | succeeded | true | |
+| live-2 | 32216386414 | 56.6 | 15 | succeeded | true | |
+| live-3 | 32216390719 | 93.8 | 17 | succeeded | true | slowest (2.7x vs live-10) |
+| live-4 | 32216394909 | 50.8 | 11 | succeeded | true | |
+| live-5 | 32216702074 | 66.9 | 15 | succeeded | true | rerun after branch-conflict cleanup |
+| live-6 | 32216404317 | 48.5 | 11 | succeeded | true | |
+| live-7 | 32216409012 | 52.3 | 17 | succeeded | true | |
+| live-8 | 32216413078 | 42.0 | 11 | succeeded | true | |
+| live-9 | 32216417997 | 45.2 | 13 | succeeded | true | |
+| live-10 | 32216422038 | 34.3 | 9 | succeeded | true | fastest |
+
+**Summary (10 runs):** mean wall 55.0s (median 51.5s, stdev 16.5s, range
+34.3–93.8s); events mean 13.2 (range 9–17); **task_solved 10/10** — every
+run applied the docstring. Provider token/cost: not measurable from the
+runtime events (`provider_usage` null, `source` unknown — D5). One initial
+run (live-5, first dispatch) failed on a stale-branch push conflict; rerun
+after cleanup succeeded.
