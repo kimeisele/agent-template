@@ -246,6 +246,15 @@ jobs:
           echo "=== runtime.stderr.log (last 30 lines) ==="
           tail -30 /tmp/sandbox-work/runtime.stderr.log 2>/dev/null || echo "(missing)"
 
+      - name: Acceptance check (task-solving criterion from the delegation)
+        id: acceptance
+        if: always() && steps.allowlist.outcome == 'success'
+        env:
+          FAW_DELEGATION_FILE: ${{ github.workspace }}/${{ github.event.inputs.delegation_file }}
+          FAW_CHECKOUT: /tmp/sandbox-work
+        run: |
+          python3 "$GITHUB_WORKSPACE/scripts/check_acceptance.py"
+
       - name: Publish bounded branch result (D1 — no PR, no main)
         if: always() && steps.allowlist.outcome == 'success' && steps.app-token.outcome == 'success'
         env:
@@ -270,19 +279,23 @@ jobs:
           INS="$(git diff --cached --numstat | awk '{s+=$1} END {print s+0}')"
           DEL="$(git diff --cached --numstat | awk '{s+=$2} END {print s+0}')"
           echo "staged insertions=$INS deletions=$DEL"
-          # task_solved: the change must be a real source edit (docstring).
+          # task_solved comes from the delegation's acceptance check, not
+          # from "any file changed". The acceptance step wrote the verdict.
           SOLVED=0
-          if [ "$CHANGED" != "0" ] && [ "$INS" -gt 0 ]; then
-            SOLVED=1
+          if [ -f /tmp/faw-acceptance.json ]; then
+            SOLVED=$(python3 -c "import json; print(1 if json.load(open('/tmp/faw-acceptance.json'))['task_solved'] else 0)")
           fi
+          echo "acceptance task_solved=$SOLVED"
           # Attach the measurement record to the branch.
           if [ -f /tmp/faw-measurement.json ]; then
             export CAL_CHANGED="$CHANGED" CAL_INS="$INS" CAL_DEL="$DEL" CAL_SOLVED="$SOLVED" CAL_AID="${{ github.event.inputs.attempt_id }}"
             python3 "$GITHUB_WORKSPACE/scripts/attach_measurement.py"
             git add calibration/runs/
           fi
-          if [ "$CHANGED" = "0" ] && [ "$SOLVED" = "0" ]; then
-            echo "NO SOURCE CHANGES — the runtime did not touch the repository files. NOT a success."
+          if [ "$SOLVED" = "0" ]; then
+            echo "TASK NOT SOLVED — the delegation's acceptance criterion was not met. NOT a success."
+            echo "violations:"; python3 -c "import json; [print('  -', v) for v in json.load(open('/tmp/faw-acceptance.json'))['violations']]" 2>/dev/null || true
+            echo "extraneous:"; python3 -c "import json; [print('  -', e) for e in json.load(open('/tmp/faw-acceptance.json'))['extraneous_files']]" 2>/dev/null || true
             exit 1
           fi
           echo "=== staged diff ==="
